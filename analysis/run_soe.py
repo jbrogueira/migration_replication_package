@@ -1,0 +1,37 @@
+import os
+import pandas as pd
+from model.equilibrium import sweep_equilibrium, err_ge_soe_laffer, pi_ge_eq
+from config import λ0_vals, bounds_lambda, σ, τl 
+
+
+def main():
+    """
+    Perform the unilateral (SOE) sweep and save results, starting
+    from the symmetric-equilibrium shares to force divergence.
+    """
+    # initialize at symmetric GE equilibrium shares (first four elements)
+    x0_soe = pi_ge_eq[:4]
+
+    # pass the custom initial guess to the sweep
+    df = sweep_equilibrium(
+        err_ge_soe_laffer,
+        λ0_vals,
+        bounds_lambda,
+        x0=x0_soe
+    )
+
+    os.makedirs("output/tables", exist_ok=True)
+    #csv_path = f"output/tables/csv/soe_sig_{int(σ)}_taul_{τl}.csv"
+    # tex_path = f"output/tables/tex/soe_sig_{int(σ)}_taul_{τl}.tex"
+
+    #df.to_csv(csv_path, index=False)
+    # df.round(2).to_latex(
+    #     tex_path, index=False, longtable=True, float_format="%.2f", encoding="utf-8"
+    # )
+
+    print("SOE head:\n", df.head())
+    return df
+
+
+if __name__ == "__main__":
+    main()
