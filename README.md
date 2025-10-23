@@ -25,10 +25,9 @@ migration_replication_package/
 ├── config.py                  # Global configuration (paths, toggles, calibration hooks)
 ├── run_all.py                 # Entry point: runs the full replication pipeline
 ├── environment.yml            # Conda environment spec (Python 3.11, numpy, scipy, matplotlib, pandas)
-└── read_me.txt                # Notes / quick reminders
 ```
 
-> By design, **all charts and tables** are created in a new `output/` folder (auto-created if missing).
+> By default, **all charts and tables** are created in a new `output/` folder (auto-created if missing).
 
 ## Reference working paper
 
@@ -66,9 +65,9 @@ python run_all.py
 
 This will:
 
-- run the baseline and policy counterfactuals (small vs. large economy; unilateral vs. multilateral; alternative elasticities if configured),
+- run the baseline and policy counterfactuals (small vs. large country model; unilateral vs. multilateral; alternative elasticities),
 - build tables summarizing migration, wages, taxes, and welfare (CEV),
-- save **all outputs** under `./output/` (plots and CSV/Excel tables, depending on your settings).
+- save **all outputs** under `./output/` (plots and tables).
 
 ## Running components individually
 
@@ -88,8 +87,8 @@ python -m analysis.build_equilibrium_tables
 
 ## Expected outputs
 
-- **Figures**: Laffer curves; consumption/welfare comparisons (CEV) by type and scenario; wage/tax incidence visuals.  
-- **Tables**: Baseline calibration, equilibrium allocations, migration shares, wages, tax rates, and welfare for each scenario.
+- **Figures**: Laffer curves.  
+- **Tables**: Baseline calibration, equilibrium allocations, migration shares, wages, tax rates, and welfare for each equilibrium. 
 
 ## How to cite
 
