@@ -21,6 +21,7 @@ def plot_tax_revenue(df, star_tau, G0, filename=None):
         linestyle='-',
         marker='o',
         markersize=6,
+        markevery=(0, 12),
         markerfacecolor='white',
         markeredgecolor='#0072B2',
         linewidth=1.5,
@@ -34,7 +35,7 @@ def plot_tax_revenue(df, star_tau, G0, filename=None):
         linestyle='--',
         linewidth=1.2,
         color='#E69F00',
-        label=r"$\tilde{\tau}_0$"
+        label=r"baseline $1-\lambda_0$"
     )
 
     # Horizontal G0 line: dotted
@@ -48,7 +49,6 @@ def plot_tax_revenue(df, star_tau, G0, filename=None):
 
     plt.xlabel(r"$1-\lambda_0$")
     plt.ylabel("Tax revenue")
-    plt.title(r"Tax revenue vs. $1-\lambda_0$")
     plt.legend(frameon=False)
     plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
     # axis limits
@@ -112,7 +112,7 @@ def plot_tax_revenue(df, star_tau, G0, filename=None):
 #         linestyle='--',
 #         linewidth=1.2,
 #         color='#E69F00',
-#         label=r"$\tilde{\tau}_0$"
+#         label=r"baseline $1-\lambda_0$"
 #     )
 
 #     # Baseline G0: horizontal dash-dot line
@@ -141,6 +141,196 @@ def plot_tax_revenue(df, star_tau, G0, filename=None):
 #     else:
 #         plt.show()
 
+def plot_unilateral_laffer(df_mult, df_soe, df_dd, star_tau, G0, filename=None,
+                           dd_label="Unilateral, differentiated destinations"):
+    """
+    Tax revenue vs. 1-λ0: multilateral (symmetric) vs the two unilateral cases —
+    perfect substitutes (common shock) and differentiated destinations.
+
+    Parameters:
+    - df_mult: multilateral (symmetric) sweep ('λ0','TR' columns)
+    - df_soe: unilateral sweep, perfect-substitutes case
+    - df_dd: unilateral sweep, differentiated destinations
+    - star_tau: 1 - λ* at the calibrated baseline
+    - G0: government expenditure (horizontal line)
+    """
+    plt.figure(figsize=(8,5))
+
+    plt.plot(
+        1 - df_mult['λ0'], df_mult['TR'],
+        linestyle='-',
+        marker='o', markersize=6, markevery=(0, 12),
+        markerfacecolor='white', markeredgecolor='#0072B2',
+        color='#0072B2', linewidth=1.5,
+        label="Multilateral (symmetric)"
+    )
+
+    plt.plot(
+        1 - df_soe['λ0'], df_soe['TR'],
+        linestyle='-',
+        marker='s', markersize=6, markevery=(4, 12),
+        markerfacecolor='white', markeredgecolor='#006400',
+        color='#006400', linewidth=1.5,
+        label="Unilateral, perfect substitutes"
+    )
+
+    plt.plot(
+        1 - df_dd['λ0'], df_dd['TR'],
+        linestyle='-',
+        marker='^', markersize=6, markevery=(8, 12),
+        markerfacecolor='white', markeredgecolor='#D55E00',
+        color='#D55E00', linewidth=1.5,
+        label=dd_label
+    )
+
+    plt.axvline(
+        x=star_tau, linestyle='--', linewidth=1.2,
+        color='#E69F00', label=r"baseline $1-\lambda_0$"
+    )
+
+    plt.axhline(
+        y=G0, linestyle=':', linewidth=1.2,
+        color='#009E73', label=r"$G_0$"
+    )
+
+    plt.xlabel(r"$1-\lambda_0$")
+    plt.ylabel("Tax revenue")
+    plt.legend(frameon=False)
+    plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
+
+    plt.tight_layout()
+    if filename:
+        plt.savefig(filename)
+        plt.close()
+    else:
+        plt.show()
+
+
+def plot_diff_dest_laffer(df_base, df_pref, star_tau, G0, filename=None,
+                          df_soe_pref=None):
+    """
+    Tax revenue vs. 1-λ0 for the differentiated-destinations small country,
+    with and without the preferential tax.
+
+    Parameters:
+    - df_base: sweep without the preferential tax ('λ0','TR' columns)
+    - df_pref: sweep with the preferential tax
+    - star_tau: 1 - λ* at the calibrated baseline
+    - G0: government expenditure (horizontal line)
+    - df_soe_pref: optional overlay, the SOE preferential-tax sweep
+      (perfect-substitutes limit)
+    """
+    plt.figure(figsize=(8,5))
+
+    plt.plot(
+        1 - df_base['λ0'], df_base['TR'],
+        linestyle='-',
+        marker='o', markersize=6, markevery=(0, 12),
+        markerfacecolor='white', markeredgecolor='#0072B2',
+        color='#0072B2', linewidth=1.5,
+        label="No preferential tax"
+    )
+
+    plt.plot(
+        1 - df_pref['λ0'], df_pref['TR'],
+        linestyle='-',
+        marker='s', markersize=6, markevery=(4, 12),
+        markerfacecolor='white', markeredgecolor='#D55E00',
+        color='#D55E00', linewidth=1.5,
+        label="Preferential tax"
+    )
+
+    if df_soe_pref is not None:
+        plt.plot(
+            1 - df_soe_pref['λ0'], df_soe_pref['TR'],
+            linestyle='--',
+            marker='^', markersize=6, markevery=(8, 12),
+            markerfacecolor='white', markeredgecolor='#CC79A7',
+            color='#CC79A7', linewidth=1.5,
+            label="Preferential tax, perfect-substitutes limit"
+        )
+
+    plt.axvline(
+        x=star_tau, linestyle='--', linewidth=1.2,
+        color='#E69F00', label=r"baseline $1-\lambda_0$"
+    )
+
+    plt.axhline(
+        y=G0, linestyle=':', linewidth=1.2,
+        color='#009E73', label=r"$G_0$"
+    )
+
+    plt.xlabel(r"$1-\lambda_0$")
+    plt.ylabel("Tax revenue")
+    plt.legend(frameon=False)
+    plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
+
+    plt.tight_layout()
+    if filename:
+        plt.savefig(filename)
+        plt.close()
+    else:
+        plt.show()
+
+
+def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
+    """
+    Tax revenue vs. 1-λ0 in the small country with the preferential tax, for several
+    values of θ (choice among foreign destinations); the no-preferential-tax curve is
+    drawn for reference.
+
+    Parameters:
+    - dfs_pref: dict {label: sweep with the preferential tax ('λ0','TR' columns)},
+      in the order to be drawn
+    - df_base: sweep without the preferential tax
+    - star_tau: 1 - λ* at the calibrated baseline
+    - G0: government expenditure (horizontal line)
+    """
+    plt.figure(figsize=(8,5))
+
+    plt.plot(
+        1 - df_base['λ0'], df_base['TR'],
+        linestyle='-', color='0.35', linewidth=1.5,
+        marker='o', markersize=6, markevery=(0, 12),
+        markerfacecolor='white', markeredgecolor='0.35',
+        label="No preferential tax"
+    )
+
+    styles = [('#0072B2', 's'), ('#D55E00', '^'), ('#CC79A7', 'D'),
+              ('#006400', 'v'), ('#56B4E9', 'P')]
+    for k, (lab, df) in enumerate(dfs_pref.items()):
+        col, mk = styles[k % len(styles)]
+        plt.plot(
+            1 - df['λ0'], df['TR'],
+            linestyle='-', color=col, linewidth=1.5,
+            marker=mk, markersize=6, markevery=(2 + 2*k, 12),
+            markerfacecolor='white', markeredgecolor=col,
+            label=lab
+        )
+
+    plt.axvline(
+        x=star_tau, linestyle='--', linewidth=1.2,
+        color='#E69F00', label=r"baseline $1-\lambda_0$"
+    )
+
+    plt.axhline(
+        y=G0, linestyle=':', linewidth=1.2,
+        color='#009E73', label=r"$G_0$"
+    )
+
+    plt.xlabel(r"$1-\lambda_0$")
+    plt.ylabel("Tax revenue")
+    plt.legend(frameon=False)
+    plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
+
+    plt.tight_layout()
+    if filename:
+        plt.savefig(filename)
+        plt.close()
+    else:
+        plt.show()
+
+
 def plot_comparison(df_sym, df_soe, star_tau, G0, filename=None,
                     mark_equilibrium=False,  # new
                     eq_kwargs=None):         # optional style overrides
@@ -166,30 +356,30 @@ def plot_comparison(df_sym, df_soe, star_tau, G0, filename=None,
 
     plt.figure(figsize=(8,5))
 
-    # Multilateral (symmetric)
+    # Unilateral, no preferential tax
     plt.plot(
         x_sym, y_sym,
         linestyle='-',
-        marker='o', markersize=6,
+        marker='o', markersize=6, markevery=(0, 12),
         markerfacecolor='white', markeredgecolor='#0072B2',
         color='#0072B2', linewidth=1.5,
-        label="Multilateral (symmetric)"
+        label="No preferential tax"
     )
 
     # Unilateral (SOE)
     plt.plot(
         x_soe, y_soe,
         linestyle='-',
-        marker='s', markersize=6,
+        marker='s', markersize=6, markevery=(6, 12),
         markerfacecolor='white', markeredgecolor='#006400',
         color='#006400', linewidth=1.5,
-        label="Unilateral preferential tax"
+        label="Preferential tax"
     )
 
     # Equilibrium 1 - λ*: vertical line
     plt.axvline(
         x=star_tau, linestyle='--', linewidth=1.2,
-        color='#E69F00', label=r"$\tilde{\tau}_0$"
+        color='#E69F00', label=r"baseline $1-\lambda_0$"
     )
 
     # Baseline G0: horizontal line
@@ -264,7 +454,6 @@ def plot_comparison(df_sym, df_soe, star_tau, G0, filename=None,
 
     plt.xlabel(r"$1-\lambda_0$")
     plt.ylabel("Tax revenue")
-    plt.title("Tax revenue: Unilateral vs. Multilateral")
     plt.legend(frameon=False)
     plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
     plt.tight_layout()
@@ -370,39 +559,38 @@ def plot_two_country_comparison(df_pe, df_sym, pi_eq, G0, filename=None):
    plt.plot(
        x, rev_sym,
        linestyle='None',
-       marker='+', markersize=15,
+       marker='+', markersize=15, markevery=(0, 12),
        markerfacecolor='white', markeredgecolor='#CC79A7',
        color='#CC79A7', linewidth=1.5,
-       label="Multilateral"
+       label="Country 0, unilateral adoption"
    )
    
    # Country 0 (PE): solid + circles
    plt.plot(
        x, rev0,
        linestyle='--',
-       marker='o', markersize=6,
+       marker='o', markersize=6, markevery=(4, 12),
        markerfacecolor='white', markeredgecolor='#0072B2',
        color='#0072B2', linewidth=1.5,
-       label="Country 0 (PE)"
+       label="Country 0"
    )
     
     # Country 1 (PE): dash-dot + triangles
    plt.plot(
        x, rev1,
        linestyle='-.',
-       marker='s', markersize=6,
+       marker='s', markersize=6, markevery=(8, 12),
        markerfacecolor='white', markeredgecolor='#D55E00',
        color='#D55E00', linewidth=1.5,
-       label="Country 1 (PE)"
+       label="Country 1"
    )
     
     # Reference lines (monochrome)
-   plt.axvline(x=tau_star, linestyle='--', linewidth=1.2, color='#E69F00', label=r'$\tilde{\tau}_0$')
+   plt.axvline(x=tau_star, linestyle='--', linewidth=1.2, color='#E69F00', label=r"baseline $1-\lambda_0$")
    plt.axhline(y=G0,       linestyle=':', linewidth=1.2, color='#009E73', label=r'$G_0$')
     
    plt.xlabel(r"$1 - \lambda_0$")
    plt.ylabel("Tax revenue")
-   plt.title("Tax revenue: Two-country partial equilibrium")
    plt.legend(frameon=False)
    plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
    # axis limits
@@ -436,29 +624,28 @@ def plot_two_country_unilateral(df, pi_eq, G0, filename=None):
     plt.plot(
         x, rev0,
         linestyle='-',
-        marker='o', markersize=6,
+        marker='o', markersize=6, markevery=(0, 12),
         markerfacecolor='white', markeredgecolor='#0072B2',
         color='#0072B2', linewidth=1.5,
-        label="Country 0 (PE)"
+        label="Country 0"
     )
 
     # Country 1: dashed + squares
     plt.plot(
         x, rev1,
         linestyle='--',
-        marker='s', markersize=6,
+        marker='s', markersize=6, markevery=(6, 12),
         markerfacecolor='white', markeredgecolor='#D55E00',
         color='#D55E00', linewidth=1.5,
-        label="Country 1 (PE)"
+        label="Country 1"
     )
 
     # Reference lines (black only)
-    plt.axvline(x=tau_star, linestyle='--', linewidth=1.2, color='#E69F00', label=r'$\tilde{\tau}_0$')
+    plt.axvline(x=tau_star, linestyle='--', linewidth=1.2, color='#E69F00', label=r"baseline $1-\lambda_0$")
     plt.axhline(y=G0,       linestyle=':', linewidth=1.2, color='#009E73', label=r'$G_0$')
 
     plt.xlabel(r"$1 - \lambda_0$")
     plt.ylabel("Tax revenue")
-    plt.title("Tax revenue: Unilateral partial equilibrium")
     plt.legend(frameon=False)
     plt.grid(True, linestyle=':', linewidth=0.6, color='0.75')
     # axis limits

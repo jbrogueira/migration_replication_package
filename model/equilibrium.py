@@ -1,13 +1,11 @@
 import numpy as np
 import pandas as pd
 from scipy import optimize
-from .equations import wage, taul, Pi, ri        # + ri
-from config import G0, λ0_vals, bounds_lambda, G1, tau_k, ell_l, ell_h
+from .equations import wage, taul, Pi, ri, cap_tax_revenue       
+from config import τl as TAU_L_BASE, G0, λ0_vals, bounds_lambda, G1, tau_k, ell_l, ell_h, x0, bnds, origin0_low, origin0_high, bounds_lambda, bounds_lambda_8
 import inspect
 
 # --- Symmetric GE equilibrium solver (baseline) ---
-_x0  = np.array([0.4, 0.2, 0.24, 0.1, 0.1])
-_bnds = ((1e-5, .75), (1e-5, .75), (1e-5, .4), (1e-5, .4), (1e-5, 10))
 
 def err_ge_eq(params, out=1, custom_λ0=None):
     p0 = params[0:4]
@@ -26,10 +24,10 @@ def err_ge_eq(params, out=1, custom_λ0=None):
         p0[0]*τ00l*w00l + p0[1]*τ10l*w10l +
         p0[2]*τ00h*w00h + p0[3]*τ10h*w10h
     )
-    #  (ii) capital-tax on origin-0 land income (origin-based, regardless of residence)
+    #  (ii) residence-based tax on land income; symmetric world: the immigrants' origin
+    #       rent equals the home rent
     r0 = ri(0, p0)
-    origin0_low, origin0_high = 0.64, 0.36   # masses by skill from your constraints
-    rev_cap0 = tau_k * r0 * (ell_l * origin0_low + ell_h * origin0_high)
+    rev_cap0 = cap_tax_revenue(p0, r0, r0)
 
     err = [
         rev_labor0 + rev_cap0 - G0,                               # govt budget (0)
@@ -42,10 +40,15 @@ def err_ge_eq(params, out=1, custom_λ0=None):
 
 
 # run this once at import to get pi_ge_eq
-_sym = optimize.minimize(err_ge_eq, _x0, method='SLSQP', bounds=_bnds, tol=1e-12)
-if not _sym.success:
-    raise RuntimeError(f"Symmetric GE solver failed: {_sym.message}")
+_sym = optimize.minimize(err_ge_eq, x0, method='SLSQP', bounds=bnds, tol=1e-12)
+assert _sym.success, f"Baseline equilibrium solver failed: {_sym.message}"
+assert _sym.fun < 1e-8, f"Baseline equilibrium residual too large: {_sym.fun:.2e}"
 pi_ge_eq = _sym.x
+# polish on the residual vector (square system: 5 conditions, 5 unknowns); SLSQP on
+# the sum of squares stops at residuals ~1e-6
+_pol = optimize.root(lambda v: err_ge_eq(v, out=0), pi_ge_eq, method='hybr', tol=1e-14)
+if np.max(np.abs(err_ge_eq(_pol.x, out=0))) < np.max(np.abs(err_ge_eq(pi_ge_eq, out=0))):
+    pi_ge_eq = _pol.x
 
 # --- Laffer‐type residual for symmetric sweep (baseline) ---
 def err_ge_eq_laffer(params, out=1, custom_λ0=0.95):
@@ -61,20 +64,20 @@ def err_ge_eq_laffer(params, out=1, custom_λ0=0.95):
     ]
     τ0 = np.array([taul(wi, λ0) for wi in w])
 
-    # only the population-share residuals
+    # only the population-share residuals, allow bc to change
     res = [
-        p0[0] - Pi(0,0,'l', p0, p0, τ0, τ0)*0.64,
-        p0[2] - Pi(0,0,'h', p0, p0, τ0, τ0)*0.36,
-        p0[0] + p0[1] - 0.64,
-        p0[2] + p0[3] - 0.36
+        p0[0] - Pi(0,0,'l', p0, p0, τ0, τ0)*origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p0, τ0, τ0)*origin0_high,
+        p0[0] + p0[1] - origin0_low,
+        p0[2] + p0[3] - origin0_high
     ]
     return np.sum(np.square(res)) if out==1 else res
 
 # --- Precompute foreign equilibrium values ---
-p_foreign = pi_ge_eq[:4]
-λ_star = pi_ge_eq[4]
-tau_star = 1 - λ_star
-w10h_star = wage(1, 0, 'h', pi_ge_eq[:4])   # (1,0) = immigrant, high skill
+p_foreign    = pi_ge_eq[:4]
+λ_star       = pi_ge_eq[4]
+tau_star     = 1 - λ_star
+w10h_star    = wage(1, 0, 'h', pi_ge_eq[:4])  
 tau10h_star  = taul(w10h_star, λ_star)
 
 # foreign wages and taxes
@@ -88,18 +91,30 @@ def err_ge_soe_laffer(params, out=1, custom_λ0=0.95):
     p0 = params[:4]
     λ0 = custom_λ0
 
-    home_w = {(i, a): wage(i, 0, a, p0) for i, a in [(0, 'l'), (1, 'l'), (0, 'h'), (1, 'h')]}
-    τ0 = np.array([taul(home_w[(i, a)], λ0) for i, a in [(0, 'l'), (1, 'l'), (0, 'h'), (1, 'h')]])
+    home_w = {
+        (0, 'l'): wage(0, 0, 'l', p0),
+        (1, 'l'): wage(1, 0, 'l', p0),
+        (0, 'h'): wage(0, 0, 'h', p0),
+        (1, 'h'): wage(1, 0, 'h', p0),
+    }
+
+    τ0 = np.array([
+        taul(home_w[(0, 'l')], λ0),
+        taul(home_w[(1, 'l')], λ0),
+        taul(home_w[(0, 'h')], λ0),
+        taul(home_w[(1, 'h')], λ0),
+    ])
 
     res = [
-        # native stay-share conditions (Pi now includes land for staying)
-        p0[0] - Pi(0, 0, 'l', p0, p_foreign, τ0, τ1) * 0.64,
-        p0[2] - Pi(0, 0, 'h', p0, p_foreign, τ0, τ1) * 0.36,
+        # native stay-share conditions
+        p0[0] - Pi(0, 0, 'l', p0, p_foreign, τ0, τ1) * origin0_low,
+        p0[2] - Pi(0, 0, 'h', p0, p_foreign, τ0, τ1) * origin0_high,
 
         # immigrant no-arbitrage on wages
         (1 - τ0[1]) * home_w[(1, 'l')] - (1 - τ1[1]) * foreign_w[(1, 'l')],
         (1 - τ0[3]) * home_w[(1, 'h')] - (1 - τ1[3]) * foreign_w[(1, 'h')],
     ]
+
     return np.sum(np.square(res)) if out == 1 else res
 
 
@@ -107,7 +122,13 @@ def err_ge_soe_laffer(params, out=1, custom_λ0=0.95):
 def err_ge_pref_tax(params, out=1, custom_λ0=None, custom_τ10h=None):
     p0 = params
 
-    home_w = {(i, a): wage(i, 0, a, p0) for i, a in [(0, 'l'), (1, 'l'), (0, 'h'), (1, 'h')]}
+    home_w = {
+        (0, 'l'): wage(0, 0, 'l', p0),
+        (1, 'l'): wage(1, 0, 'l', p0),
+        (0, 'h'): wage(0, 0, 'h', p0),
+        (1, 'h'): wage(1, 0, 'h', p0),
+    }
+
     τ0 = np.array([
         taul(home_w[(0, 'l')], custom_λ0),
         taul(home_w[(1, 'l')], custom_λ0),
@@ -116,34 +137,30 @@ def err_ge_pref_tax(params, out=1, custom_λ0=None, custom_τ10h=None):
     ])
 
     res = [
-        # native stay-share conditions (Pi includes land for staying)
-        p0[0] - Pi(0, 0, 'l', p0, p_foreign, τ0, τ1) * 0.64,
-        p0[2] - Pi(0, 0, 'h', p0, p_foreign, τ0, τ1) * 0.36,
+        # native stay-share conditions
+        p0[0] - Pi(0, 0, 'l', p0, p_foreign, τ0, τ1) * origin0_low,
+        p0[2] - Pi(0, 0, 'h', p0, p_foreign, τ0, τ1) * origin0_high,
 
-        # immigrant no-arbitrage on wages only (simple for now)
+        # immigrant no-arbitrage on wages only 
         (1 - τ0[1]) * home_w[(1, 'l')] - (1 - τ1[1]) * foreign_w[(1, 'l')],
         (1 - τ0[3]) * home_w[(1, 'h')] - (1 - τ1[3]) * foreign_w[(1, 'h')],
     ]
     return np.sum(np.square(res)) if out == 1 else res
 
 
-# --- Sweep helper ---
-def sweep_equilibrium(err_func, λ_vals, bounds, x0=None):
-    """
-    Symmetric (two identical countries) λ-sweep.
-    For each λ in λ_vals:
-      - solve err_func(..., custom_λ0=λ)
-      - compute wages, taxes τ(y)=taul(y, λ)
-      - inc codes (00l,10l,00h,10h) = labor net + origin-based land net of tau_k
-      - TR = labor tax + origin-based land tax
 
-    Returns: DataFrame with columns
-      λ0, p00l,p10l,p00h,p10h, w00l,w10l,w00h,w10h,
-      tau00l,tau10l,tau00h,tau10h,
-      inc00l,inc10l,inc00h,inc10h, TR, fun
+# --- Sweep helper ---
+def sweep_equilibrium(err_func, λ_vals, bounds, x0=None, symmetric=False):
     """
-    if x0 is None:
-        x0 = np.array([0.52, 0.10, 0.30, 0.10])
+    Sweep equilibrium over λ_vals for the given residual function.
+    Uses x0[:4] if provided, else globals()['x0'][:4].
+    τ10h can be pinned via err_func.tau10h_fixed (float).
+    Land income is always origin-based: r0 = ri(0,p0), r1 = ri(1,p_foreign).
+    """
+    # init (simple)
+    base_x0 = np.asarray(x0 if x0 is not None else globals()['x0'])
+    assert base_x0.size >= 4, "x0 must have at least 4 elements."
+    curr_x = base_x0[:4].astype(float)
 
     tau10h_fixed = getattr(err_func, "tau10h_fixed", None)
 
@@ -157,52 +174,48 @@ def sweep_equilibrium(err_func, λ_vals, bounds, x0=None):
     ]
     out = {c: [] for c in cols}
 
-    origin0_low, origin0_high = 0.64, 0.36  # fixed origin masses by skill
-
     for λ in λ_vals:
         sol = optimize.minimize(
             lambda v: err_func(v, out=1, custom_λ0=λ),
-            x0=x0, method="SLSQP", bounds=bounds,
+            x0=curr_x, method="SLSQP", bounds=bounds,
             tol=1e-12, options={"ftol": 1e-12, "maxiter": 1000}
         )
-        if not sol.success:
-            # skip infeasible/failed points to keep the sweep clean
+        if not sol.success or sol.fun > 1e-8:
             continue
 
         p0 = sol.x[:4]
 
-        # wages (country 0 perspective)
         w00l = wage(0,0,'l',p0); w10l = wage(1,0,'l',p0)
         w00h = wage(0,0,'h',p0); w10h = wage(1,0,'h',p0)
 
-        # labor taxes at this λ (override τ10h if err_func pins it)
+        # taxes
         tau00l = taul(w00l, λ)
         tau10l = taul(w10l, λ)
         tau00h = taul(w00h, λ)
-        tau10h = taul(w10h, λ) if (tau10h_fixed is None) else float(tau10h_fixed)
+        tau10h = (float(tau10h_fixed) if tau10h_fixed is not None else taul(w10h, λ))
 
-        # origin-based land returns (symmetric baseline ⇒ r1 == r0)
+        # origin-based land returns (immigrants' origin: the symmetric world in the
+        # multilateral sweep, the frozen foreign allocation otherwise)
         r0 = ri(0, p0)
-        r1 = r0
+        r1 = r0 if symmetric else ri(1, p_foreign)
 
-        # net land income per code (origin 0 for 00·, origin 1 for 10·)
         land00l = r0 * ell_l * (1.0 - tau_k)
         land10l = r1 * ell_l * (1.0 - tau_k)
         land00h = r0 * ell_h * (1.0 - tau_k)
         land10h = r1 * ell_h * (1.0 - tau_k)
 
-        # consumption (labor net + origin-based land net)
+        # disposable income
         inc00l = w00l * (1 - tau00l) + land00l
         inc10l = w10l * (1 - tau10l) + land10l
         inc00h = w00h * (1 - tau00h) + land00h
         inc10h = w10h * (1 - tau10h) + land10h
 
-        # government revenue in country 0: labor + land (origin-based)
+        # gov revenue in country 0
         rev_labor0 = (
             p0[0]*tau00l*w00l + p0[1]*tau10l*w10l +
             p0[2]*tau00h*w00h + p0[3]*tau10h*w10h
         )
-        rev_cap0 = tau_k * r0 * (ell_l*origin0_low + ell_h*origin0_high)
+        rev_cap0 = cap_tax_revenue(p0, r0, r1)
         TR = rev_labor0 + rev_cap0
 
         row = [
@@ -216,8 +229,7 @@ def sweep_equilibrium(err_func, λ_vals, bounds, x0=None):
         for c, v in zip(cols, row):
             out[c].append(v)
 
-        # warm start next iteration
-        x0 = p0.copy()
+        curr_x = p0.copy()
 
     return pd.DataFrame(out)
 
@@ -227,22 +239,21 @@ def sweep_equilibrium(err_func, λ_vals, bounds, x0=None):
 ###############################################################################
 ################### LARGE COUNTRY EQUILIBRIA ##################################
 ###############################################################################
-# --- Two-country residual function ---
+# --- Two-country residual (PE/GE) ---
 def err_2country(
     params,
     out=1,
     λ0=None,
     λ1=None,
-    tau_high_imm_override=None,  # GLOBAL: τ10h (C0) and τ01h (C1)
-    tau10h_override=None,        # UNILATERAL: τ10h (C0) only; ignored if global provided
-    mode='GE'                    # 'GE' adds C1 GBC and takes λ1 from params[-1]; 'PE' takes λ1 from arg
+    tau_high_imm_override=None,   # GLOBAL: sets τ10h (C0) and τ01h (C1)
+    tau10h_override=None,         # UNILATERAL: sets τ10h (C0) only if GLOBAL is None
+    mode='GE'                     # 'GE' → λ1 from params[-1] and adds C1 GBC; 'PE' → λ1 from arg
 ):
     if λ0 is None:
         raise ValueError("Pass λ0 via argument.")
 
-    # unpack
-    p0 = params[0:4]  # [p00l, p10l, p00h, p10h]
-    p1 = params[4:8]  # [p11l, p01l, p11h, p01h]
+    p0 = params[0:4]   # [p00l, p10l, p00h, p10h]
+    p1 = params[4:8]   # [p11l, p01l, p11h, p01h]
 
     λ0_val = λ0
     λ1_val = (params[-1] if mode == 'GE' else λ1)
@@ -253,56 +264,53 @@ def err_2country(
     w11l = wage(1,1,'l',p1);  w01l = wage(0,1,'l',p1)
     w11h = wage(1,1,'h',p1);  w01h = wage(0,1,'h',p1)
 
-    # taxes: C0 [τ00l, τ10l, τ00h, τ10h]
+    # taxes C0
     τ00l = taul(w00l, λ0_val)
     τ10l = taul(w10l, λ0_val)
     τ00h = taul(w00h, λ0_val)
-    if tau_high_imm_override is not None:
-        τ10h = float(tau_high_imm_override)   # GLOBAL
-    elif tau10h_override is not None:
-        τ10h = float(tau10h_override)         # UNILATERAL
-    else:
-        τ10h = taul(w10h, λ0_val)
+    τ10h = (float(tau_high_imm_override) if tau_high_imm_override is not None
+            else float(tau10h_override)   if tau10h_override      is not None
+            else taul(w10h, λ0_val))
     τ0 = np.array([τ00l, τ10l, τ00h, τ10h])
 
-    # taxes: C1 [τ11l, τ01l, τ11h, τ01h]
+    # taxes C1
     τ11l = taul(w11l, λ1_val)
     τ01l = taul(w01l, λ1_val)
     τ11h = taul(w11h, λ1_val)
-    if tau_high_imm_override is not None:
-        τ01h = float(tau_high_imm_override)   # GLOBAL
-    else:
-        τ01h = taul(w01h, λ1_val)
+    τ01h = (float(tau_high_imm_override) if tau_high_imm_override is not None
+            else taul(w01h, λ1_val))
     τ1 = np.array([τ11l, τ01l, τ11h, τ01h])
 
-    # residuals
+    # residuals: stay shares + accounting identities
     err = [
-        # C0
-        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1) * 0.64,
-        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1) * 0.36,
-        p0[0] + p1[1] - 0.64,
-        p0[2] + p1[3] - 0.36,
-        # C1
-        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0) * 0.64,
-        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0) * 0.36,
-        p1[0] + p0[1] - 0.64,
-        p1[2] + p0[3] - 0.36,
+        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1) * origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1) * origin0_high,
+        p0[0] + p1[1] - origin0_low,
+        p0[2] + p1[3] - origin0_high,
+
+        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0) * origin0_low,
+        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0) * origin0_high,
+        p1[0] + p0[1] - origin0_low,
+        p1[2] + p0[3] - origin0_high,
     ]
 
-    # C1 GBC (only GE)
     if mode == 'GE':
-        TR1_lab = (
-            p1[0]*τ11l*w11l + p1[1]*τ01l*w01l +
-            p1[2]*τ11h*w11h + p1[3]*τ01h*w01h
-        )
-        origin1_low, origin1_high = 0.64, 0.36
-        r1 = ri(1, p1)
-        TR1_cap = tau_k * r1 * (ell_l * origin1_low + ell_h * origin1_high)
-        gbc1 = TR1_lab + TR1_cap - G1
-        err.insert(0, gbc1)
+        TR1_lab = (p1[0]*τ11l*w11l + p1[1]*τ01l*w01l + p1[2]*τ11h*w11h + p1[3]*τ01h*w01h)
+        TR1_cap = cap_tax_revenue(p1, ri(1, p1), ri(0, p0))   # residence-based
+        err.insert(0, TR1_lab + TR1_cap - G1)
 
     return np.sum(np.square(err)) if out == 1 else err
 
+
+def _polish(res_vec, x):
+    """Newton polish of an SLSQP solution on the residual vector of a square system;
+    kept only if it lowers the largest residual."""
+    pol = optimize.root(res_vec, x, method='hybr', tol=1e-14)
+    size = lambda v: np.max(np.abs(res_vec(v)))
+    return pol.x if np.all(np.isfinite(pol.x)) and size(pol.x) < size(x) else x
+
+
+# --- Two-country sweep (PE/GE) ---
 def sweep_equilibrium_2country(
     err_func,
     λ0_vals,
@@ -310,11 +318,13 @@ def sweep_equilibrium_2country(
     bounds,
     x0=None,
     free_lambda1=False,
-    **err_kwargs
+    **report_kwargs  # optional, only used for *reporting* τ’s
 ):
+    # allow λ1 to float
     if free_lambda1:
         bounds = bounds + ((1e-5, 1.5),)
 
+    # default x0
     if x0 is None:
         p0_star = pi_ge_eq[:4]
         base = np.concatenate([p0_star, p0_star])
@@ -330,189 +340,124 @@ def sweep_equilibrium_2country(
     ]
     results = {c: [] for c in cols}
 
-    origin_low, origin_high = 0.64, 0.36
-
-    # resolve overrides from caller
-    tau_hi_imm_global = err_kwargs.get("tau_high_imm_override", None)                         # explicit GLOBAL
-    tau10h_unilateral = err_kwargs.get("tau10h_override", err_kwargs.get("custom_τ10h", None))# UNILATERAL
-
-    # if user called the GE-global residual with custom_τ10h, treat it as GLOBAL for reporting
-    if (tau_hi_imm_global is None) and (err_func.__name__ == "ge_pref_residual_global"):
-        tau_hi_imm_global = err_kwargs.get("custom_τ10h", None)
-
-    # filter kwargs to err_func signature (prevents PE funcs from choking)
-    possible_policy_kwargs = {
-        "tau_high_imm_override": tau_hi_imm_global,
-        "tau10h_override": tau10h_unilateral,
-        "custom_τ10h": err_kwargs.get("custom_τ10h", None),
-    }
-    sig = set(inspect.signature(err_func).parameters.keys())
-    filtered_policy_kwargs = {k: v for k, v in possible_policy_kwargs.items() if (k in sig and v is not None)}
+    # reporting-only overrides (don’t pass into err_func)
+    tau_hi_imm_global = report_kwargs.get("tau_high_imm_override", None)
+    tau10h_unilateral = report_kwargs.get("tau10h_override", report_kwargs.get("custom_τ10h", None))
+    pick_tau = lambda base, g=None, u=None: (float(g) if g is not None else (float(u) if u is not None else base))
 
     for λ0 in λ0_vals:
+        # call residual with *positional* args only: (params, out, λ0, λ1)
         sol = optimize.minimize(
-            lambda params: err_func(
-                params,
-                1,
-                λ0,
-                (None if free_lambda1 else λ1_fixed),
-                **filtered_policy_kwargs
-            ),
+            lambda params: err_func(params, 1, λ0, (None if free_lambda1 else λ1_fixed)),
             x0, method="SLSQP", bounds=bounds, tol=1e-10
         )
+        assert sol.success, f"Minimization failed at λ0={λ0}: {sol.message}"
 
-        if sol.success:
-            p = sol.x
-            p0, p1 = p[:4], p[4:8]
-            λ1_val = sol.x[8] if free_lambda1 else λ1_fixed
+        p = _polish(lambda v: np.asarray(err_func(v, 0, λ0, (None if free_lambda1 else λ1_fixed))),
+                    sol.x)
+        sol.x = p
+        p0, p1 = p[:4], p[4:8]
+        λ1_val = sol.x[8] if free_lambda1 else λ1_fixed
 
-            # wages
-            w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
-            w1 = np.array([wage(1,1,'l',p1), wage(0,1,'l',p1), wage(1,1,'h',p1), wage(0,1,'h',p1)])
+        # wages
+        w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
+        w1 = np.array([wage(1,1,'l',p1), wage(0,1,'l',p1), wage(1,1,'h',p1), wage(0,1,'h',p1)])
 
-            # taxes (reporter mirrors policy semantics)
-            # C0: [τ00l, τ10l, τ00h, τ10h]
-            τ0 = np.array([
-                taul(w0[0], λ0),
-                taul(w0[1], λ0),
-                taul(w0[2], λ0),
-                ( float(tau_hi_imm_global) if tau_hi_imm_global is not None
-                  else ( float(tau10h_unilateral) if tau10h_unilateral is not None
-                         else taul(w0[3], λ0) ))
-            ])
+        # taxes for reporting (apply reporting override if provided)
+        τ0 = np.array([
+            taul(w0[0], λ0),
+            taul(w0[1], λ0),
+            taul(w0[2], λ0),
+            pick_tau(taul(w0[3], λ0), g=tau_hi_imm_global, u=tau10h_unilateral)
+        ])
+        τ1 = np.array([
+            taul(w1[0], λ1_val),
+            taul(w1[1], λ1_val),
+            taul(w1[2], λ1_val),
+            pick_tau(taul(w1[3], λ1_val), g=tau_hi_imm_global, u=None)
+        ])
 
-            # C1: [τ11l, τ01l, τ11h, τ01h]
-            τ1_list = [taul(w1[i], λ1_val) for i in range(4)]
-            if tau_hi_imm_global is not None:
-                τ1_list[3] = float(tau_hi_imm_global)  # GLOBAL forces τ01h
-            τ1 = np.array(τ1_list)
+        # origin-based land returns
+        r0, r1 = ri(0, p0), ri(1, p1)
+        land00l = r0 * ell_l * (1 - tau_k); land10l = r1 * ell_l * (1 - tau_k)
+        land00h = r0 * ell_h * (1 - tau_k); land10h = r1 * ell_h * (1 - tau_k)
+        land11l = r1 * ell_l * (1 - tau_k); land01l = r0 * ell_l * (1 - tau_k)
+        land11h = r1 * ell_h * (1 - tau_k); land01h = r0 * ell_h * (1 - tau_k)
 
-            # asserts
-            if tau_hi_imm_global is not None:
-                assert np.isclose(τ0[3], tau_hi_imm_global), "τ10h (C0) not enforced (GLOBAL)"
-                assert np.isclose(τ1[3], tau_hi_imm_global), "τ01h (C1) not enforced (GLOBAL)"
-            if tau10h_unilateral is not None and tau_hi_imm_global is None:
-                assert np.isclose(τ0[3], tau10h_unilateral), "τ10h (C0) not enforced (UNILATERAL)"
+        inc0 = np.array([
+            w0[0]*(1-τ0[0]) + land00l,
+            w0[1]*(1-τ0[1]) + land10l,
+            w0[2]*(1-τ0[2]) + land00h,
+            w0[3]*(1-τ0[3]) + land10h
+        ])
+        inc1 = np.array([
+            w1[0]*(1-τ1[0]) + land11l,
+            w1[1]*(1-τ1[1]) + land01l,
+            w1[2]*(1-τ1[2]) + land11h,
+            w1[3]*(1-τ1[3]) + land01h
+        ])
 
-            # revenues (labor + origin-based capital; if r=0 → just labor)
-            r0 = ri(0, p0); r1 = ri(1, p1)
-            land00l = r0 * ell_l * (1 - tau_k); land10l = r1 * ell_l * (1 - tau_k)
-            land00h = r0 * ell_h * (1 - tau_k); land10h = r1 * ell_h * (1 - tau_k)
-            land11l = r1 * ell_l * (1 - tau_k); land01l = r0 * ell_l * (1 - tau_k)
-            land11h = r1 * ell_h * (1 - tau_k); land01h = r0 * ell_h * (1 - tau_k)
+        TR0 = float(np.dot(p0, τ0 * w0)) + cap_tax_revenue(p0, r0, r1)
+        TR1 = float(np.dot(p1, τ1 * w1)) + cap_tax_revenue(p1, r1, r0)
 
-            inc0 = np.array([
-                w0[0]*(1-τ0[0]) + land00l,
-                w0[1]*(1-τ0[1]) + land10l,
-                w0[2]*(1-τ0[2]) + land00h,
-                w0[3]*(1-τ0[3]) + land10h
-            ])
-            inc1 = np.array([
-                w1[0]*(1-τ1[0]) + land11l,
-                w1[1]*(1-τ1[1]) + land01l,
-                w1[2]*(1-τ1[2]) + land11h,
-                w1[3]*(1-τ1[3]) + land01h
-            ])
-
-            TR0_lab = np.dot(p0, τ0 * w0)
-            TR1_lab = np.dot(p1, τ1 * w1)
-            TR0_cap = tau_k * r0 * (ell_l * origin_low + ell_h * origin_high)
-            TR1_cap = tau_k * r1 * (ell_l * origin_low + ell_h * origin_high)
-            TR0 = TR0_lab + TR0_cap
-            TR1 = TR1_lab + TR1_cap
-
-            row = [λ0, λ1_val, *p0, *p1, *w0, *w1, *τ0, *τ1, *inc0, *inc1, TR0, TR1, sol.fun]
-        else:
-            λ1_val = sol.x[8] if (free_lambda1 and hasattr(sol, "x") and len(sol.x) >= 9) else (np.nan if free_lambda1 else λ1_fixed)
-            print(f"⚠️ failed at λ0={λ0}: {sol.message}")
-            row = [λ0, λ1_val] + [np.nan] * (len(cols) - 2)
-
+        row = [λ0, λ1_val, *p0, *p1, *w0, *w1, *τ0, *τ1, *inc0, *inc1, TR0, TR1, sol.fun]
         for c, v in zip(cols, row):
             results[c].append(v)
+
+        x0 = sol.x  # warm start
 
     return pd.DataFrame(results)
 
 
 
-# --- (PE) Residual with preferential τ10h in Country 0 -----------------------
+# --- (PE) Residual with preferential τ10h in C0 ---
 def err_pe_large_tau10h(params, out=1, custom_λ0=None, custom_λ1=None, custom_τ10h=None):
-    """
-    Two-country PE residual:
-      • Country 0 sets τ10h = custom_τ10h (preferential on high-skill immigrants).
-      • Country 1 uses its regular schedule.
-      • No government budget constraints here (PE), so no land-income terms.
-    """
-    # unpack populations
-    p0 = params[0:4]   # [p00l, p10l, p00h, p10h]
-    p1 = params[4:8]   # [p11l, p01l, p11h, p01h]
+    p0 = params[0:4]
+    p1 = params[4:8]
 
-    λ0 = custom_λ0
-    λ1 = custom_λ1
-    τ10h_pref = custom_τ10h
+    w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
+    w1 = np.array([wage(1,1,'l',p1), wage(0,1,'l',p1), wage(1,1,'h',p1), wage(0,1,'h',p1)])
 
-    # wages
-    w0 = np.array([
-        wage(0,0,'l',p0), wage(1,0,'l',p0),
-        wage(0,0,'h',p0), wage(1,0,'h',p0)
-    ])
-    w1 = np.array([
-        wage(1,1,'l',p1), wage(0,1,'l',p1),
-        wage(1,1,'h',p1), wage(0,1,'h',p1)
-    ])
+    τ0 = np.array([taul(w0[0], custom_λ0), taul(w0[1], custom_λ0), taul(w0[2], custom_λ0), custom_τ10h])
+    τ1 = np.array([taul(w1[0], custom_λ1), taul(w1[1], custom_λ1), taul(w1[2], custom_λ1), taul(w1[3], custom_λ1)])
 
-    # taxes (override τ10h in country 0)
-    τ0 = np.array([
-        taul(w0[0], λ0),
-        taul(w0[1], λ0),
-        taul(w0[2], λ0),
-        τ10h_pref
-    ])
-    τ1 = np.array([
-        taul(w1[0], λ1),
-        taul(w1[1], λ1),
-        taul(w1[2], λ1),
-        taul(w1[3], λ1)
-    ])
-
-    # residuals: native stay shares and population sums (both countries)
     err = [
-        # Country 0
-        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1) * 0.64,
-        p0[0] + p1[1] - 0.64,
-        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1) * 0.36,
-        p0[2] + p1[3] - 0.36,
+        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1) * origin0_low,
+        p0[0] + p1[1] - origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1) * origin0_high,
+        p0[2] + p1[3] - origin0_high,
 
-        # Country 1
-        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0) * 0.64,
-        p1[0] + p0[1] - 0.64,
-        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0) * 0.36,
-        p1[2] + p0[3] - 0.36,
+        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0) * origin0_low,
+        p1[0] + p0[1] - origin0_low,
+        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0) * origin0_high,
+        p1[2] + p0[3] - origin0_high,
     ]
-
     return np.sum(np.square(err)) if out == 1 else err
 
 
-# --- equilibrium glue ---
-
-
-def ge_pref_residual_global(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None):
-    """
-    GE global preferential tax: force τ10h (Country 0) and τ01h (Country 1) = custom_τ10h.
-    λ1 floats inside params[-1] under mode='GE'.
-    """
+# --- GE global preferential tax glue ---
+def ge_pref_residual_unilateral(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None):
+    """Unilateral preferential tax in country 0; country 1 has no preferential tax and
+    λ1 (params[-1]) clears its budget."""
     return err_2country(
         params=params,
         out=out,
         λ0=custom_λ0,
-        λ1=None,                           # GE: λ1 floats in params[-1]
-        tau_high_imm_override=custom_τ10h, # GLOBAL override → τ10h & τ01h
+        λ1=None,                          # GE: λ1 floats in params[-1]
+        tau10h_override=custom_τ10h,      # preferential rate in country 0 only
         mode='GE'
     )
 
 
-
-
-
+def ge_pref_residual_global(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None):
+    return err_2country(
+        params=params,
+        out=out,
+        λ0=custom_λ0,
+        λ1=None,                          # GE: λ1 floats in params[-1]
+        tau_high_imm_override=custom_τ10h,
+        mode='GE'
+    )
 
 
 ###############################################################################
@@ -526,121 +471,112 @@ def _taul_param(y, lam, tau_l_param):
 
 def err_ge_soe_pref_tau(params, out=1, lam=None, tau_l_param=None, τ10h_pref=None):
     """
-    SOE residual like above, but override τ10h with a preferential tax.
-    Still no GBC; land affects only the stay-vs-move via Pi.
+    SOE residual with preferential τ10h (high-skill immigrants in C0).
+    No GBC here; land only matters inside Pi via incentives.
     """
     p0 = params[:4]
+
+    # wages (home, from country-0 perspective)
     w00l = wage(0,0,'l',p0); w10l = wage(1,0,'l',p0)
     w00h = wage(0,0,'h',p0); w10h = wage(1,0,'h',p0)
 
+    # taxes (progressive schedule for all except τ10h, which is pinned)
     τ00l = _taul_param(w00l, lam, tau_l_param)
     τ10l = _taul_param(w10l, lam, tau_l_param)
     τ00h = _taul_param(w00h, lam, tau_l_param)
     τ10h = τ10h_pref
     τ0 = np.array([τ00l, τ10l, τ00h, τ10h])
 
+    # residuals (stay-shares + immigrant no-arbitrage)
     res = [
-        p0[0] - Pi(0,0,'l', p0, p_foreign, τ0, τ1)*0.64,
-        p0[2] - Pi(0,0,'h', p0, p_foreign, τ0, τ1)*0.36,
-        (1-τ10l)*w10l - (1-τ1[1]) * foreign_w[(1,'l')],
-        (1-τ10h)*w10h - (1-τ1[3]) * foreign_w[(1,'h')],
+        p0[0] - Pi(0,0,'l', p0, p_foreign, τ0, τ1) * origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p_foreign, τ0, τ1) * origin0_high,
+        (1 - τ10l) * w10l - (1 - τ1[1]) * foreign_w[(1,'l')],
+        (1 - τ10h) * w10h - (1 - τ1[3]) * foreign_w[(1,'h')],
     ]
-    return np.sum(np.square(res)) if out==1 else res
+    return np.sum(np.square(res)) if out == 1 else res
 
 
-def sweep_taul_soe_pref(lambda_star, tau_grid, τ10h_pref, x0=None, bnds=None):
-    if x0 is None:
-        x0 = np.array([0.52, 0.12, 0.30, 0.06])
-    if bnds is None:
-        # (p00l, p10l, p00h, p10h)
-        bnds = ((1e-5, .64), (1e-5, .64), (1e-5, .36), (1e-5, .36))
+def sweep_taul_soe_pref(lambda_star, tau_grid, τ10h_pref):
+    # initial guess and bounds
+    curr_x = np.asarray(x0)[:4].astype(float)
+    bounds = tuple(bounds_lambda[:4])
+
+    # foreign land return is fixed in SOE
+    r1_foreign = ri(1, p_foreign)
 
     rows = []
-    origin_low, origin_high = 0.64, 0.36  # origin masses by skill
-
     for tau_l_param in tau_grid:
         sol = optimize.minimize(
-            lambda x: err_ge_soe_pref_tau(
-                x, out=1, lam=lambda_star, tau_l_param=tau_l_param, τ10h_pref=τ10h_pref
-            ),
-            x0, method='SLSQP', bounds=bnds, tol=1e-10
+            lambda x: err_ge_soe_pref_tau(x, out=1, lam=lambda_star,
+                                          tau_l_param=tau_l_param, τ10h_pref=τ10h_pref),
+            x0=curr_x, method='SLSQP', bounds=bounds,
+            tol=1e-10, options={"ftol": 1e-12, "maxiter": 1000}
         )
         if not sol.success:
-            continue
+            continue  # keep your current behavior; switch to `assert sol.success, ...` if you prefer hard-fail
 
         p0 = sol.x[:4]
-        w  = [wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)]
-        τ  = [
-            _taul_param(w[0], lambda_star, tau_l_param),
-            _taul_param(w[1], lambda_star, tau_l_param),
-            _taul_param(w[2], lambda_star, tau_l_param),
-            τ10h_pref
-        ]
+        curr_x = p0.copy()  # warm start
 
-        # --- Government revenue: labor + origin-based land (already correct)
-        TR_lab = p0[0]*τ[0]*w[0] + p0[1]*τ[1]*w[1] + p0[2]*τ[2]*w[2] + p0[3]*τ[3]*w[3]
-        r0 = ri(0, p0)                      # home land return (origin 0)
-        TR_cap = tau_k * r0 * (ell_l * origin_low + ell_h * origin_high)
+        # wages
+        w00l = wage(0,0,'l',p0); w10l = wage(1,0,'l',p0)
+        w00h = wage(0,0,'h',p0); w10h = wage(1,0,'h',p0)
+
+        # taxes at this (lambda_star, tau_l_param)
+        tau00l = _taul_param(w00l, lambda_star, tau_l_param)
+        tau10l = _taul_param(w10l, lambda_star, tau_l_param)
+        tau00h = _taul_param(w00h, lambda_star, tau_l_param)
+        tau10h = τ10h_pref
+
+        # government revenue in country 0: labor + origin-based land
+        TR_lab = (
+            p0[0]*tau00l*w00l + p0[1]*tau10l*w10l +
+            p0[2]*tau00h*w00h + p0[3]*tau10h*w10h
+        )
+        r0 = ri(0, p0)
+        TR_cap = cap_tax_revenue(p0, r0, r1_foreign)
         TR = TR_lab + TR_cap
 
-        # --- Add origin-based net land income to consumption (SOE: foreign side fixed)
-        r1_foreign = ri(1, p_foreign)       # foreign land return (origin 1, fixed at baseline)
+        # disposable income (labor net + origin-based net land income)
+        land00l = r0 * ell_l * (1 - tau_k)
+        land00h = r0 * ell_h * (1 - tau_k)
+        land10l = r1_foreign * ell_l * (1 - tau_k)
+        land10h = r1_foreign * ell_h * (1 - tau_k)
 
-        land00l = r0 * ell_l * (1 - tau_k)  # origin 0, low
-        land00h = r0 * ell_h * (1 - tau_k)  # origin 0, high
-        land10l = r1_foreign * ell_l * (1 - tau_k)  # origin 1, low
-        land10h = r1_foreign * ell_h * (1 - tau_k)  # origin 1, high
-
-        inc00l = w[0]*(1-τ[0]) + land00l
-        inc10l = w[1]*(1-τ[1]) + land10l
-        inc00h = w[2]*(1-τ[2]) + land00h
-        inc10h = w[3]*(1-τ[3]) + land10h
+        inc00l = w00l*(1 - tau00l) + land00l
+        inc10l = w10l*(1 - tau10l) + land10l
+        inc00h = w00h*(1 - tau00h) + land00h
+        inc10h = w10h*(1 - tau10h) + land10h
 
         rows.append(dict(
             tau_l=tau_l_param, TR=TR,
             p00l=p0[0], p10l=p0[1], p00h=p0[2], p10h=p0[3],
-            w00l=w[0], w10l=w[1], w00h=w[2], w10h=w[3],
-            tau00l=τ[0], tau10l=τ[1], tau00h=τ[2], tau10h=τ[3],
+            w00l=w00l, w10l=w10l, w00h=w00h, w10h=w10h,
+            tau00l=tau00l, tau10l=tau10l, tau00h=tau00h, tau10h=tau10h,
             inc00l=inc00l, inc10l=inc10l, inc00h=inc00h, inc10h=inc10h,
             fun=sol.fun
         ))
+
     return pd.DataFrame(rows).sort_values('tau_l').reset_index(drop=True)
 
 
 
 
-def _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lam_star, fun_val):
-    """
-    Build a row for the two-country sweeps.
 
-    - Incomes (inc··) = net labor + origin-based net land income
-      * Country 0 origin land return: r0 = ri(0, p0)
-      * Country 1 origin land return: r1 = ri(1, p1)
-      * Net land per capita for skill a ∈ {l,h} is r_origin * ell_a * (1 - tau_k),
-        regardless of residence.
-    - Tax revenue (TR0/TR1) = labor tax + origin-based land tax (already correct).
-    """
-    # land returns by origin
+def _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lam_star, fun_val,
+                           tau_l_param1=None):
+    # origin-based land returns
     r0 = ri(0, p0)
     r1 = ri(1, p1)
 
-    # origin masses by skill (used only for revenue)
-    origin_low, origin_high = 0.64, 0.36
+    # net land per capita (origin-based)
+    land00l = r0 * ell_l * (1 - tau_k); land00h = r0 * ell_h * (1 - tau_k)
+    land10l = r1 * ell_l * (1 - tau_k); land10h = r1 * ell_h * (1 - tau_k)
+    land11l = r1 * ell_l * (1 - tau_k); land11h = r1 * ell_h * (1 - tau_k)
+    land01l = r0 * ell_l * (1 - tau_k); land01h = r0 * ell_h * (1 - tau_k)
 
-    # --- net land components (origin-based), per capita
-    # Country 0 display codes (origin 0 for 00·, origin 1 for 10·):
-    land00l = r0 * ell_l * (1 - tau_k)
-    land00h = r0 * ell_h * (1 - tau_k)
-    land10l = r1 * ell_l * (1 - tau_k)
-    land10h = r1 * ell_h * (1 - tau_k)
-
-    # Country 1 display codes (origin 1 for 11·, origin 0 for 01·):
-    land11l = r1 * ell_l * (1 - tau_k)
-    land11h = r1 * ell_h * (1 - tau_k)
-    land01l = r0 * ell_l * (1 - tau_k)
-    land01h = r0 * ell_h * (1 - tau_k)
-
-    # --- net incomes = net labor + net land (origin-based)
+    # after-tax incomes = net labor + net land (origin-based)
     inc0 = np.array([
         w0[0]*(1-τ0[0]) + land00l,  # inc00l
         w0[1]*(1-τ0[1]) + land10l,  # inc10l
@@ -654,16 +590,13 @@ def _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lam_star, fun_
         w1[3]*(1-τ1[3]) + land01h,  # inc01h
     ])
 
-    # --- tax revenues: labor + origin-based land (unchanged logic)
-    TR0_lab = float(np.dot(p0, τ0 * w0))
-    TR1_lab = float(np.dot(p1, τ1 * w1))
-    TR0_cap = tau_k * r0 * (ell_l * origin_low + ell_h * origin_high)
-    TR1_cap = tau_k * r1 * (ell_l * origin_low + ell_h * origin_high)
-    TR0 = TR0_lab + TR0_cap
-    TR1 = TR1_lab + TR1_cap
+    # tax revenue = labor + origin-based land
+    TR0 = float(np.dot(p0, τ0 * w0)) + cap_tax_revenue(p0, r0, r1)
+    TR1 = float(np.dot(p1, τ1 * w1)) + cap_tax_revenue(p1, r1, r0)
 
     return {
-        'tauL0': tau_l_param, 'tauL1': tau_l_param,
+        'tauL0': tau_l_param,
+        'tauL1': tau_l_param if tau_l_param1 is None else tau_l_param1,
         # populations
         'p00l': p0[0], 'p10l': p0[1], 'p00h': p0[2], 'p10h': p0[3],
         'p11l': p1[0], 'p01l': p1[1], 'p11h': p1[2], 'p01h': p1[3],
@@ -673,52 +606,61 @@ def _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lam_star, fun_
         # taxes
         'tau00l': τ0[0], 'tau10l': τ0[1], 'tau00h': τ0[2], 'tau10h': τ0[3],
         'tau11l': τ1[0], 'tau01l': τ1[1], 'tau11h': τ1[2], 'tau01h': τ1[3],
-        # after-tax incomes (now include land)
+        # incomes
         'inc00l': inc0[0], 'inc10l': inc0[1], 'inc00h': inc0[2], 'inc10h': inc0[3],
         'inc11l': inc1[0], 'inc01l': inc1[1], 'inc11h': inc1[2], 'inc01h': inc1[3],
-        # revenues (also duplicated as G0/G1)
+        # revenues (mirror into G0/G1 for convenience)
         'TR0': TR0, 'TR1': TR1, 'G0': TR0, 'G1': TR1,
         'λ0': lam_star, 'λ1': lam_star, 'fun': fun_val
     }
 
 
+
 def _err_two_country_case2(params, out, lam_star, tau_l_param, τ10h_pref):
-    """Case 2: pref only on τ10h (Country 0). τ_l same in both countries."""
     p0 = params[:4]; p1 = params[4:8]
     w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
     w1 = np.array([wage(1,1,'l',p1), wage(0,1,'l',p1), wage(1,1,'h',p1), wage(0,1,'h',p1)])
+
     τ0 = np.array([
         _taul_param(w0[0], lam_star, tau_l_param),
         _taul_param(w0[1], lam_star, tau_l_param),
         _taul_param(w0[2], lam_star, tau_l_param),
         τ10h_pref
     ])
+    # country 1 has no preferential tax; its progressivity τl1 = params[8] clears its
+    # budget (λ* in both countries)
+    tau_l1 = params[8]
     τ1 = np.array([
-        _taul_param(w1[0], lam_star, tau_l_param),
-        _taul_param(w1[1], lam_star, tau_l_param),
-        _taul_param(w1[2], lam_star, tau_l_param),
-        _taul_param(w1[3], lam_star, tau_l_param)
+        _taul_param(w1[0], lam_star, tau_l1),
+        _taul_param(w1[1], lam_star, tau_l1),
+        _taul_param(w1[2], lam_star, tau_l1),
+        _taul_param(w1[3], lam_star, tau_l1)
     ])
+    TR1 = (float(np.dot(p1, τ1 * w1))
+           + cap_tax_revenue(p1, ri(1, p1), ri(0, p0)))
+
     err = [
-        # Country 0 stay/sum
-        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1)*0.64,
-        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1)*0.36,
-        p0[0] + p1[1] - 0.64,
-        p0[2] + p1[3] - 0.36,
-        # Country 1 stay/sum
-        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0)*0.64,
-        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0)*0.36,
-        p1[0] + p0[1] - 0.64,
-        p1[2] + p0[3] - 0.36,
+        TR1 - G1,
+        # C0
+        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1)*origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1)*origin0_high,
+        p0[0] + p1[1] - origin0_low,
+        p0[2] + p1[3] - origin0_high,
+        # C1
+        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0)*origin0_low,
+        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0)*origin0_high,
+        p1[0] + p0[1] - origin0_low,
+        p1[2] + p0[3] - origin0_high,
     ]
-    return np.sum(np.square(err)) if out==1 else err
+    return np.sum(np.square(err)) if out == 1 else err
+
 
 
 def _err_two_country_case3(params, out, lam_star, tau_l_param, τ10h_pref, τ01h_pref):
-    """Case 3: pref on τ10h (Country 0) and τ01h (Country 1). τ_l same in both."""
     p0 = params[:4]; p1 = params[4:8]
     w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
     w1 = np.array([wage(1,1,'l',p1), wage(0,1,'l',p1), wage(1,1,'h',p1), wage(0,1,'h',p1)])
+
     τ0 = np.array([
         _taul_param(w0[0], lam_star, tau_l_param),
         _taul_param(w0[1], lam_star, tau_l_param),
@@ -731,39 +673,42 @@ def _err_two_country_case3(params, out, lam_star, tau_l_param, τ10h_pref, τ01h
         _taul_param(w1[2], lam_star, tau_l_param),
         τ01h_pref
     ])
+
     err = [
-        # Country 0 stay/sum
-        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1)*0.64,
-        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1)*0.36,
-        p0[0] + p1[1] - 0.64,
-        p0[2] + p1[3] - 0.36,
-        # Country 1 stay/sum
-        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0)*0.64,
-        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0)*0.36,
-        p1[0] + p0[1] - 0.64,
-        p1[2] + p0[3] - 0.36,
+        # C0
+        p0[0] - Pi(0,0,'l', p0, p1, τ0, τ1)*origin0_low,
+        p0[2] - Pi(0,0,'h', p0, p1, τ0, τ1)*origin0_high,
+        p0[0] + p1[1] - origin0_low,
+        p0[2] + p1[3] - origin0_high,
+        # C1
+        p1[0] - Pi(1,1,'l', p1, p0, τ1, τ0)*origin0_low,
+        p1[2] - Pi(1,1,'h', p1, p0, τ1, τ0)*origin0_high,
+        p1[0] + p0[1] - origin0_low,
+        p1[2] + p0[3] - origin0_high,
     ]
-    return np.sum(np.square(err)) if out==1 else err
+    return np.sum(np.square(err)) if out == 1 else err
 
 
-def sweep_taul_large_case2(lambda_star, tau_grid, τ10h_pref, x0=None, bnds=None):
-    """Country 0 adopts preferential τ10h; Country 1 does not. τ_l varies (same in both)."""
+
+def sweep_taul_large_case2(lambda_star, tau_grid, τ10h_pref, x0=None):
+    """Country 0: preferential tax, progressivity τl0 swept; country 1: no preferential
+    tax, progressivity τl1 (x[8]) clears its budget."""
     if x0 is None:
-        pstar = pi_ge_eq[:4]
-        x0 = np.concatenate([pstar, pstar])
-    if bnds is None:
-        b4 = ((1e-5, .64), (1e-5, .36), (1e-5, .64), (1e-5, .36))
-        bnds = b4 + b4
+        pstar = pi_ge_eq[:4]; x0 = np.concatenate([pstar, pstar, [TAU_L_BASE]])
+    bounds = tuple(bounds_lambda_8) + ((0.0, 1.0),)
 
     rows = []
     for tau_l_param in tau_grid:
         sol = optimize.minimize(
-            lambda v: _err_two_country_case2(v, out=1, lam_star=lambda_star, tau_l_param=tau_l_param, τ10h_pref=τ10h_pref),
-            x0, method='SLSQP', bounds=bnds, tol=1e-10
+            lambda v: _err_two_country_case2(v, out=1, lam_star=lambda_star,
+                                             tau_l_param=tau_l_param, τ10h_pref=τ10h_pref),
+            x0, method='SLSQP', bounds=bounds, tol=1e-10
         )
         if not sol.success:
             print(f"⚠️ two-country case2 failed at τ_l={tau_l_param:.3f}: {sol.message}")
             continue
+        sol.x = _polish(lambda v: np.asarray(_err_two_country_case2(
+            v, out=0, lam_star=lambda_star, tau_l_param=tau_l_param, τ10h_pref=τ10h_pref)), sol.x)
 
         p0, p1 = sol.x[:4], sol.x[4:8]
         w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
@@ -774,39 +719,41 @@ def sweep_taul_large_case2(lambda_star, tau_grid, τ10h_pref, x0=None, bnds=None
             _taul_param(w0[2], lambda_star, tau_l_param),
             τ10h_pref
         ])
+        tau_l1 = sol.x[8]
         τ1 = np.array([
-            _taul_param(w1[0], lambda_star, tau_l_param),
-            _taul_param(w1[1], lambda_star, tau_l_param),
-            _taul_param(w1[2], lambda_star, tau_l_param),
-            _taul_param(w1[3], lambda_star, tau_l_param)
+            _taul_param(w1[0], lambda_star, tau_l1),
+            _taul_param(w1[1], lambda_star, tau_l1),
+            _taul_param(w1[2], lambda_star, tau_l1),
+            _taul_param(w1[3], lambda_star, tau_l1)
         ])
-        # NOTE: TR0/TR1 include land-tax revenue inside _build_row_two_country
-        row = _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lambda_star, sol.fun)
+        row = _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lambda_star, sol.fun,
+                                     tau_l_param1=tau_l1)
         row['tau10h'] = τ0[3]; row['tau01h'] = τ1[3]
         rows.append(row)
+
+        x0 = sol.x  # warm start
 
     return pd.DataFrame(rows).sort_values('tauL0').reset_index(drop=True)
 
 
-def sweep_taul_large_case3(lambda_star, tau_grid, τ_pref, x0=None, bnds=None):
-    """Both countries adopt preferential tax on immigrant high-skill (τ10h = τ01h = τ_pref)."""
+def sweep_taul_large_case3(lambda_star, tau_grid, τ_pref, x0=None):
     if x0 is None:
-        pstar = pi_ge_eq[:4]
-        x0 = np.concatenate([pstar, pstar])
-    if bnds is None:
-        b4 = ((1e-5, .64), (1e-5, .36), (1e-5, .64), (1e-5, .36))
-        bnds = b4 + b4
+        pstar = pi_ge_eq[:4]; x0 = np.concatenate([pstar, pstar])
+    bounds = tuple(bounds_lambda_8)
 
     rows = []
     for tau_l_param in tau_grid:
         sol = optimize.minimize(
-            lambda v: _err_two_country_case3(v, out=1, lam_star=lambda_star, tau_l_param=tau_l_param,
-                                             τ10h_pref=τ_pref, τ01h_pref=τ_pref),
-            x0, method='SLSQP', bounds=bnds, tol=1e-10
+            lambda v: _err_two_country_case3(v, out=1, lam_star=lambda_star,
+                                             tau_l_param=tau_l_param, τ10h_pref=τ_pref, τ01h_pref=τ_pref),
+            x0, method='SLSQP', bounds=bounds, tol=1e-10
         )
         if not sol.success:
             print(f"⚠️ two-country case3 failed at τ_l={tau_l_param:.3f}: {sol.message}")
             continue
+        sol.x = _polish(lambda v: np.asarray(_err_two_country_case3(
+            v, out=0, lam_star=lambda_star, tau_l_param=tau_l_param, τ10h_pref=τ_pref,
+            τ01h_pref=τ_pref)), sol.x)
 
         p0, p1 = sol.x[:4], sol.x[4:8]
         w0 = np.array([wage(0,0,'l',p0), wage(1,0,'l',p0), wage(0,0,'h',p0), wage(1,0,'h',p0)])
@@ -823,9 +770,12 @@ def sweep_taul_large_case3(lambda_star, tau_grid, τ_pref, x0=None, bnds=None):
             _taul_param(w1[2], lambda_star, tau_l_param),
             τ_pref
         ])
-        # NOTE: TR0/TR1 include land-tax revenue inside _build_row_two_country
         row = _build_row_two_country(p0, p1, w0, w1, τ0, τ1, tau_l_param, lambda_star, sol.fun)
         row['tau10h'] = τ0[3]; row['tau01h'] = τ1[3]
         rows.append(row)
 
+        x0 = sol.x  # warm start
+
     return pd.DataFrame(rows).sort_values('tauL0').reset_index(drop=True)
+
+

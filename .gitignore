@@ -10,3 +10,5 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+output/
+.pytest_cache/

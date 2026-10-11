@@ -6,28 +6,29 @@ This repository contains the code and materials to reproduce the results, figure
 
 ```
 migration_replication_package/
-├── analysis/                  # Run scripts that generate figures/tables
-│   ├── build_equilibrium_tables.py
-│   ├── run_baseline.py
-│   ├── run_pref_large.py
-│   ├── run_pref_large_ge.py
-│   ├── run_pref_tax.py
-│   ├── run_soe.py
-│   ├── run_taul_soe.py
-│   ├── run_taul_sweeps.py
-│   └── run_two_country.py
-├── model/                     # Core model code (equations, equilibrium, parameters)
-│   ├── equations.py
-│   ├── equilibrium.py
-│   ├── parameters.py
-│   └── __init__.py
-├── viz/                       # Plotting helpers
-├── config.py                  # Global configuration (paths, toggles, calibration hooks)
-├── run_all.py                 # Entry point: runs the full replication pipeline
-├── environment.yml            # Conda environment spec (Python 3.11, numpy, scipy, matplotlib, pandas)
+├── analysis/                  # Scripts that solve each experiment and write tables
+│   ├── run_baseline.py        # Multilateral (symmetric) Laffer curve
+│   ├── run_diff_dest.py       # Small country, differentiated destinations (theta finite)
+│   ├── run_soe.py, run_pref_tax.py   # Small country, perfect-substitutes limit
+│   ├── run_two_country.py, run_pref_large.py, run_pref_large_ge.py  # Large country, multilateral
+│   ├── run_taul_*.py          # Progressivity parameter clears the budget (appendix)
+│   ├── run_theta_sweep.py     # Small country for several values of theta (appendix)
+│   ├── run_temporary_tax.py   # Temporary preferential tax (appendix)
+│   ├── run_sigma_theta_grid.py  # Sensitivity to sigma and theta
+│   ├── build_equilibrium_tables.py, exact_refine.py, run_variant.py
+├── model/                     # Calibration, equations, equilibrium solvers
+├── viz/                       # Plotting
+├── tests/                     # pytest checks of the calibration and the solvers
+├── data/eurostat/             # Eurostat extracts used for the calibration targets
+├── config.py                  # Parameters and calibration targets
+├── run_all.py                 # Main experiments at the baseline calibration
+├── run_paper.py               # Every table and figure of the static model
+├── environment.yml, requirements.txt
 ```
 
-> By default, **all charts and tables** are created in a new `output/` folder (auto-created if missing).
+Baseline calibration (`config.py`): sigma = 1.323, theta = 3.202, rho = 3, epsilon = 7, phi = 0.72, tax progressivity 0.216, preferential rate 0.13. The remaining parameters (S, kappa, lambda, G) are calibrated in `model/calibration.py` to the data targets. The parameters sigma, theta, epsilon, gamma, rho and phi can be overridden with the environment variables `MIG_SIGMA`, `MIG_THETA`, `MIG_EPS`, `MIG_GAMMA`, `MIG_RHO` and `MIG_PHI`.
+
+> All tables (CSV and LaTeX) and figures are written to a new `output/` folder.
 
 ## Reference working paper
 
@@ -60,35 +61,29 @@ Open `config.py` to adjust paths or calibration options. Defaults should work ou
 From the repo root (with the environment activated):
 
 ```bash
+python run_paper.py
+```
+
+This runs:
+
+- `run_all.py` at the baseline calibration: the multilateral and unilateral Laffer curves, the small country with differentiated destinations and in the perfect-substitutes limit, the large country, multilateral adoption, the progressivity variant and the theta sweep (`output/tables/`, `output/figures/`);
+- the temporary preferential tax (`analysis.run_temporary_tax`);
+- the variants sigma = theta = 2, epsilon = 20 and land (gamma = 0.05), each in a temporary copy of the package, collected in `output/variants/{sig2,eps20,gamma005}/`;
+- the sensitivity to sigma and theta (`analysis.run_sigma_theta_grid`), in `output/variants/sigma_theta_grid/`.
+
+The dynamic exercise in the appendix, based on the model of Caliendo, Opromolla, Parro and Sforza (2021), uses separate MATLAB code that is not part of this package. The full run takes a few minutes. Output file names carry the values of sigma and theta (for example `sig_1p323_theta_3p202`). Every reported equilibrium satisfies the government budget constraint to numerical precision.
+
+To run only the main experiments:
+
+```bash
 python run_all.py
 ```
 
-This will:
-
-- run the baseline and policy counterfactuals (small vs. large country model; unilateral vs. multilateral; alternative elasticities),
-- build tables summarizing migration, wages, taxes, and welfare (CEV),
-- save **all outputs** under `./output/` (plots and tables).
-
-## Running components individually
-
-Execute specific parts as needed:
+To run the tests:
 
 ```bash
-python -m analysis.run_baseline
-python -m analysis.run_soe                 # Small open economy experiments
-python -m analysis.run_pref_tax            # Preferential tax for high-skill immigrants
-python -m analysis.run_pref_large          # Large-country unilateral adoption
-python -m analysis.run_pref_large_ge       # Large-country general equilibrium variants
-python -m analysis.run_two_country         # Two-country model
-python -m analysis.build_equilibrium_tables
+python -m pytest -q
 ```
-
-(Each script writes its own artifacts into `output/`.)
-
-## Expected outputs
-
-- **Figures**: Laffer curves.  
-- **Tables**: Baseline calibration, equilibrium allocations, migration shares, wages, tax rates, and welfare for each equilibrium. 
 
 ## How to cite
 

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy import optimize
 from model.equilibrium import sweep_equilibrium, err_ge_pref_tax, pi_ge_eq
-from config import λ0_vals, pref_tax, G0, σ, bounds_lambda, τl
+from config import λ0_vals, pref_tax, G0, σ, bounds_lambda, τl, tau10h_vals, SIG_TAG
 from model.equations import wage, taul
 
 
@@ -28,19 +28,54 @@ def main(pref_tax=pref_tax, x0=pi_ge_eq[:4], bounds=bounds_lambda):
     )
 
     os.makedirs("output/tables", exist_ok=True)
-    #csv_share = f"output/tables/csv/soe_pref_tax_{int(pref_tax*100)}_sig_{int(σ)}_taul_{τl}.csv"
-    # tex_share = f"output/tables/tex/soe_pref_tax_{int(pref_tax*100)}_sig_{int(σ)}_taul_{τl}.tex"
-
-    #df_share.to_csv(csv_share, index=False)
+    csv_share = f"output/tables/csv/soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}.csv"
+    df_share.to_csv(csv_share, index=False)
     
-    # Equilibrium values with preferential tax
-    eq = df_share[df_share["TR"] >= G0].head(1)
-    print(eq.shape)   
-    eq.to_csv(f"output/tables/csv/soe_pref_tax_{int(pref_tax*100)}_sig_{int(σ)}_taul_{τl}_equilibrium.csv", index=False)
+
+    # This part of the script just makes sure we look for the correct
+    # equilibrium in cases where total revenues are not monotonic
+    if df_share["TR"].is_monotonic_increasing:
+        eq = df_share[df_share["TR"] >= G0].head(1)
+    else:
+        peak_idx = df_share["TR"].idxmax()
+        tail = df_share.loc[peak_idx:]  
+        eq = tail.loc[(tail["TR"] >= G0) & (tail["TR"].shift(-1) < G0)].head(1) 
+        if eq.empty:
+            ge = tail[tail["TR"] >= G0].tail(1)
+            eq = ge if not ge.empty else df_share.iloc[0:0]
+
+
+    # diagnostic flag: the selected row is a budget-clearing equilibrium only if the
+    # revenue curve crosses G0 between it and its grid neighbour; otherwise the row
+    # is the edge of the solvable λ0 range (e.g. the immigrant stock diverges before
+    # revenue falls to G0) and is not an equilibrium
+    crossing = False
+    if not eq.empty:
+        i = df_share.index.get_loc(eq.index[0])
+        step = abs(λ0_vals[1] - λ0_vals[0])
+        for j in (i - 1, i + 1):
+            if 0 <= j < len(df_share):
+                nb = df_share.iloc[j]
+                adjacent = abs(nb["λ0"] - df_share.iloc[i]["λ0"]) < 1.5 * step
+                if adjacent and np.sign(nb["TR"] - G0) != np.sign(df_share.iloc[i]["TR"] - G0):
+                    crossing = True
+    if crossing:
+        # exact budget clearing (θ = inf: immigrant indifference), warm-started at the grid row
+        from model.equilibrium_diff_dest import solve_diff_dest, equilibrium_row
+        r0 = eq.iloc[0]
+        x_init = np.array([r0["p00l"], r0["p10l"], r0["p00h"], r0["p10h"], r0["λ0"]])
+        x = solve_diff_dest(pref_tax, x0_init=x_init, θ=np.inf)
+        eq = pd.DataFrame([equilibrium_row(x[:4], x[4], τ10h_fixed=pref_tax)])
+    eq = eq.assign(budget_crossing=crossing)
+    if not crossing:
+        print(f"DIAGNOSTIC FLAG: no budget-clearing crossing of TR = G0 on the solvable "
+              f"λ0 range for the perfect-substitutes preferential tax (τ_P = {pref_tax}); "
+              f"the equilibrium CSV row is NOT an equilibrium")
+
+    eq.to_csv(f"output/tables/csv/soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv", index=False)
 
     # 2) Sweep over τ10h for Laffer curve
     λ_star = pi_ge_eq[4]
-    tau10h_vals = np.linspace(0, 0.5, 25)
     results = []
     for τ10h in tau10h_vals:
         sol = optimize.minimize(
@@ -68,15 +103,8 @@ def main(pref_tax=pref_tax, x0=pi_ge_eq[:4], bounds=bounds_lambda):
 
     df_tau = pd.DataFrame(results)
 
-    #csv_tau = "output/tables/csv/soe_tau10h_sweep_sig_{int(σ)}_taul_{τl}.csv"
-    #tex_tau = "output/tables/tau10h_sweep.tex"
-
+    #csv_tau = "output/tables/csv/soe_tau10h_sweep_{SIG_TAG}_taul_{τl}.csv"
     #df_tau.to_csv(csv_tau, index=False)
-    #df_tau.round(2).to_latex(
-    #    tex_tau, index=False, longtable=True, float_format="%.2f", encoding="utf-8"
-    #)
-    #print("Pref-tax tau10h head:\n", df_tau.head())
-
     return df_share, df_tau
 
 

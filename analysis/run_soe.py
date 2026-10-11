@@ -1,7 +1,6 @@
 import os
-import pandas as pd
 from model.equilibrium import sweep_equilibrium, err_ge_soe_laffer, pi_ge_eq
-from config import λ0_vals, bounds_lambda, σ, τl 
+from config import λ0_vals, bounds_lambda, σ, τl, SIG_TAG
 
 
 def main():
@@ -21,17 +20,10 @@ def main():
     )
 
     os.makedirs("output/tables", exist_ok=True)
-    #csv_path = f"output/tables/csv/soe_sig_{int(σ)}_taul_{τl}.csv"
-    # tex_path = f"output/tables/tex/soe_sig_{int(σ)}_taul_{τl}.tex"
+    csv_path = f"output/tables/csv/soe_{SIG_TAG}_taul_{τl}.csv"
+    df.to_csv(csv_path, index=False)
 
-    #df.to_csv(csv_path, index=False)
-    # df.round(2).to_latex(
-    #     tex_path, index=False, longtable=True, float_format="%.2f", encoding="utf-8"
-    # )
-
-    print("SOE head:\n", df.head())
     return df
-
 
 if __name__ == "__main__":
     main()
