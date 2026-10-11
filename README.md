@@ -23,6 +23,7 @@ migration_replication_package/
 ├── config.py                  # Parameters and calibration targets
 ├── run_all.py                 # Main experiments at the baseline calibration
 ├── run_paper.py               # Every table and figure of the static model
+├── cops/                     # Dynamic multi-country exercise (appendix), see cops/README.md
 ├── environment.yml, requirements.txt
 ```
 
@@ -71,7 +72,7 @@ This runs:
 - the variants sigma = theta = 2, epsilon = 20 and land (gamma = 0.05), each in a temporary copy of the package, collected in `output/variants/{sig2,eps20,gamma005}/`;
 - the sensitivity to sigma and theta (`analysis.run_sigma_theta_grid`), in `output/variants/sigma_theta_grid/`.
 
-The dynamic exercise in the appendix, based on the model of Caliendo, Opromolla, Parro and Sforza (2021), uses separate MATLAB code that is not part of this package. The full run takes a few minutes. Output file names carry the values of sigma and theta (for example `sig_1p323_theta_3p202`). Every reported equilibrium satisfies the government budget constraint to numerical precision.
+The dynamic exercise in the appendix, based on the model of Caliendo, Opromolla, Parro and Sforza (2021), is in `cops/` (Octave or MATLAB); `cops/README.md` lists the files to take from their replication package and the steps to run it. The full run takes a few minutes. Output file names carry the values of sigma and theta (for example `sig_1p323_theta_3p202`). Every reported equilibrium satisfies the government budget constraint to numerical precision.
 
 To run only the main experiments:
 

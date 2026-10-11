@@ -12,3 +12,14 @@ venv/
 Thumbs.db
 output/
 .pytest_cache/
+# COPS files copied in from the Caliendo et al. (2021) package, and run outputs
+cops/Dinprime_eu.m
+cops/GMCeu_skill.m
+cops/GMCeu_unskill.m
+cops/P_h_om_eu_skill.m
+cops/expenditure_eu_skill.m
+cops/expenditure_eu_unskilled.m
+cops/tempeq_skill.m
+cops/*.mat
+cops/runs/
+cops/figures/
