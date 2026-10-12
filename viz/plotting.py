@@ -334,9 +334,10 @@ def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
 def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
                              filename=None):
     """
-    Small country with differentiated destinations, government spending proportional
-    to the resident population N. Left: tax revenue and required spending G0·N vs.
-    1-λ0, with and without the preferential tax. Right: tax revenue per resident vs. G0.
+    Government spending proportional to the resident population N of country 0 (small
+    country with differentiated destinations or in the perfect-substitutes limit, or the
+    adopting large country). Left: tax revenue and required spending G0·N vs. 1-λ0, with
+    and without the preferential tax. Right: tax revenue per resident vs. G0.
 
     Parameters:
     - df_base, df_pref: sweeps without / with the preferential tax ('λ0','TR',
@@ -344,7 +345,7 @@ def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
     - star_tau: 1 - λ* at the calibrated baseline
     - G0: government expenditure at the baseline (N = 1)
     - eq_fixed, eq_gpc: equilibria with the preferential tax, (λ0, N), under G = G0
-      and G = G0·N
+      and G = G0·N; None skips the marker (no budget-clearing equilibrium)
     """
     stocks = ['p00l', 'p10l', 'p00h', 'p10h']
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -367,8 +368,10 @@ def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
                    color='#E69F00', label=r"baseline $1-\lambda_0$")
         ax.axhline(y=G0, linestyle=':', linewidth=1.2, color='#009E73', label=r"$G_0$")
 
-        for (λ0, N), mk, lab in ((eq_fixed, 'o', r"equilibrium, $G = G_0$"),
-                                 (eq_gpc, 'D', r"equilibrium, $G = G_0 N$")):
+        for (λ0, N), mk, lab in ((eq_fixed or (None, None), 'o', r"equilibrium, $G = G_0$"),
+                                 (eq_gpc or (None, None), 'D', r"equilibrium, $G = G_0 N$")):
+            if (λ0, N) == (None, None):
+                continue
             G = G0 * N if mk == 'D' else G0
             ax.plot(1 - λ0, G / N if per_resident else G, mk, markersize=9,
                     markerfacecolor='none', markeredgecolor='k', label=lab)

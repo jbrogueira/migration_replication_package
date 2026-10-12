@@ -28,7 +28,7 @@ migration_replication_package/
 ├── environment.yml, requirements.txt
 ```
 
-Baseline calibration (`config.py`): sigma = 1.323, theta = 3.202, rho = 3, epsilon = 7, phi = 0.72, tax progressivity 0.216, preferential rate 0.13. The remaining parameters (S, kappa, lambda, G) are calibrated in `model/calibration.py` to the data targets. The parameters sigma, theta, epsilon, gamma, rho and phi can be overridden with the environment variables `MIG_SIGMA`, `MIG_THETA`, `MIG_EPS`, `MIG_GAMMA`, `MIG_RHO` and `MIG_PHI`.
+Baseline calibration (`config.py`): sigma = 1.323, theta = 3.202, rho = 3, epsilon = 7, phi = 0.72, tax progressivity 0.216, preferential rate 0.114. The remaining parameters (S, kappa, lambda, G) are calibrated in `model/calibration.py` to the data targets. The parameters sigma, theta, epsilon, gamma, rho and phi can be overridden with the environment variables `MIG_SIGMA`, `MIG_THETA`, `MIG_EPS`, `MIG_GAMMA`, `MIG_RHO` and `MIG_PHI`.
 
 > All tables (CSV and LaTeX) and figures are written to a new `output/` folder.
 

@@ -247,8 +247,12 @@ def err_2country(
     λ1=None,
     tau_high_imm_override=None,   # GLOBAL: sets τ10h (C0) and τ01h (C1)
     tau10h_override=None,         # UNILATERAL: sets τ10h (C0) only if GLOBAL is None
-    mode='GE'                     # 'GE' → λ1 from params[-1] and adds C1 GBC; 'PE' → λ1 from arg
+    mode='GE',                    # 'GE' → λ1 from params[-1] and adds C1 GBC; 'PE' → λ1 from arg
+    g_per_capita=False            # C1 spending G1 times its resident population (1 at baseline)
 ):
+    """Two-country residual. Country 0's budget is not in this system: callers clear it
+    outside (λ0 sweep + root-find), against G0 or, with g_per_capita, against G0 times
+    country 0's resident population. g_per_capita here applies to country 1 only."""
     if λ0 is None:
         raise ValueError("Pass λ0 via argument.")
 
@@ -297,7 +301,8 @@ def err_2country(
     if mode == 'GE':
         TR1_lab = (p1[0]*τ11l*w11l + p1[1]*τ01l*w01l + p1[2]*τ11h*w11h + p1[3]*τ01h*w01h)
         TR1_cap = cap_tax_revenue(p1, ri(1, p1), ri(0, p0))   # residence-based
-        err.insert(0, TR1_lab + TR1_cap - G1)
+        G1_req = G1 * float(np.sum(p1)) if g_per_capita else G1
+        err.insert(0, TR1_lab + TR1_cap - G1_req)
 
     return np.sum(np.square(err)) if out == 1 else err
 
@@ -436,7 +441,8 @@ def err_pe_large_tau10h(params, out=1, custom_λ0=None, custom_λ1=None, custom_
 
 
 # --- GE global preferential tax glue ---
-def ge_pref_residual_unilateral(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None):
+def ge_pref_residual_unilateral(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None,
+                                g_per_capita=False):
     """Unilateral preferential tax in country 0; country 1 has no preferential tax and
     λ1 (params[-1]) clears its budget."""
     return err_2country(
@@ -445,18 +451,21 @@ def ge_pref_residual_unilateral(params, out, custom_λ0, custom_λ1=None, custom
         λ0=custom_λ0,
         λ1=None,                          # GE: λ1 floats in params[-1]
         tau10h_override=custom_τ10h,      # preferential rate in country 0 only
-        mode='GE'
+        mode='GE',
+        g_per_capita=g_per_capita
     )
 
 
-def ge_pref_residual_global(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None):
+def ge_pref_residual_global(params, out, custom_λ0, custom_λ1=None, custom_τ10h=None,
+                            g_per_capita=False):
     return err_2country(
         params=params,
         out=out,
         λ0=custom_λ0,
         λ1=None,                          # GE: λ1 floats in params[-1]
         tau_high_imm_override=custom_τ10h,
-        mode='GE'
+        mode='GE',
+        g_per_capita=g_per_capita
     )
 
 

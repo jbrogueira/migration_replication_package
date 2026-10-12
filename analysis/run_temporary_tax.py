@@ -2,12 +2,12 @@
 """
 Temporary tax robustness check (Referee 2, comment 2).
 
-The baseline preferential tax (pref_tax=0.13) assumes the entire stock of
+The baseline preferential tax (pref_tax) assumes the entire stock of
 high-skill immigrants benefits permanently. Real policies are temporary
 (e.g., 5 years for new residents). We rescale the tax cut by the share of
 exempt years to get an effective lifetime rate.
 
-Temporary: tau10h_eff = (T_exempt/T_total) * 0.13 + (1 - T_exempt/T_total) * tau10h_base,
+Temporary: tau10h_eff = (T_exempt/T_total) * pref_tax + (1 - T_exempt/T_total) * tau10h_base,
 with tau10h_base the high-skill immigrants' average tax rate at the calibrated baseline.
 """
 

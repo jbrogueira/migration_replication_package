@@ -232,9 +232,9 @@ def solve_diff_dest_damped(custom_τ10h: Optional[float] = None, damping: float 
         return (equilibrium_row(p, λ0, τ10h_fixed=custom_τ10h)["TR"]
                 - required_spending(p, g_per_capita))
 
-    # the revenue curve can cross G0 twice at high σ: scan λ0 descending from 1
+    # the revenue curve can cross G twice at high σ: scan λ0 descending from 1
     # and bracket the first crossing — the sweep-selection convention (first
-    # grid point from the top with TR ≥ G0)
+    # grid point from the top with TR ≥ G)
     λ_grid = np.linspace(1.0, 0.75, 26)
     g_prev = _g(λ_grid[0])
     for λ_lo, g_here in ((λ, _g(λ)) for λ in λ_grid[1:]):
@@ -243,7 +243,7 @@ def solve_diff_dest_damped(custom_τ10h: Optional[float] = None, damping: float 
                                  xtol=1e-12)
             return np.concatenate([_stocks_at(λ0), [λ0]])
         g_prev = g_here
-    raise RuntimeError("no budget-clearing crossing of TR = G0 in [0.75, 1.0]")
+    raise RuntimeError("no budget-clearing crossing of TR = G in [0.75, 1.0]")
 
 
 def sweep_diff_dest(λ_vals, custom_τ10h: Optional[float] = None, x0=None,

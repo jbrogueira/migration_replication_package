@@ -100,6 +100,7 @@ def _sig(x) -> str:
 
 
 def _tex_grid(grid: pd.DataFrame) -> str:
+    from config import pref_tax
     sig = sorted(grid["sigma"].unique())
     p_b = grid["p10h_base"].iloc[0]
     lines = [
@@ -127,7 +128,7 @@ def _tex_grid(grid: pd.DataFrame) -> str:
     lines += [
         r"\bottomrule",
         r"\end{tabular}",
-        fr"\caption{{Unilateral preferential tax ($\tau^P = 0.13$) in the small country, for "
+        fr"\caption{{Unilateral preferential tax ($\tau^P = {pref_tax}$) in the small country, for "
         fr"values of $\sigma$ and $\theta \geq \sigma$ ($\rho = {RHO}$, $\varphi = {PHI}$). Each "
         fr"$\sigma$ is recalibrated to the same targets. $\pi_{{F0}}^h$: high-skill immigrants "
         fr"with the preferential tax at the baseline $\sigma = {_sig(SIGMA_BASE)}$ ({p_b:.3f} without it); it is "

@@ -11,7 +11,7 @@ from model.equilibrium import pi_ge_eq, err_ge_eq, p_foreign, λ_star, τ1
 from model.equations import Pi
 from model import equilibrium_diff_dest as dd
 
-TWO_COUNTRY_CSV = f"output/tables/csv/two_country_pref_13_{SIG_TAG}_taul_0.216_equilibrium.csv"
+TWO_COUNTRY_CSV = f"output/tables/csv/two_country_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_0.216_equilibrium.csv"
 
 
 @pytest.fixture(scope="session")
@@ -68,7 +68,7 @@ def test_inflow_elasticity_theta():
     assert abs(el - θ) < 1e-6
 
 
-# --- Gate 5: budget clearing and solver agreement at τ_P = 0.13 ---
+# --- Gate 5: budget clearing and solver agreement at τ_P = pref_tax ---
 def test_budget_clearing(policy_damped):
     row = dd.equilibrium_row(policy_damped[:4], policy_damped[4], τ10h_fixed=pref_tax)
     assert abs(row["TR"] - G0) < 1e-8
@@ -101,8 +101,8 @@ def test_taul_adjustment_budget_clearing():
 # --- Gate 4: foreign CEV analytic, mirroring guard ---
 def test_needs_policy_mirroring_guard():
     from analysis.build_equilibrium_tables import _needs_policy_mirroring
-    assert _needs_policy_mirroring(f"diff_dest_pref_tax_13_{DD_TAG}_taul_0.216") is False
-    assert _needs_policy_mirroring(f"soe_pref_tax_13_{SIG_TAG}_taul_0.216") is True
+    assert _needs_policy_mirroring(f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_0.216") is False
+    assert _needs_policy_mirroring(f"soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_0.216") is True
 
 
 def test_foreign_cev_analytic_zero(policy_slsqp, tmp_path, monkeypatch):
@@ -114,7 +114,7 @@ def test_foreign_cev_analytic_zero(policy_slsqp, tmp_path, monkeypatch):
     row_b = dd.equilibrium_row(pi_ge_eq[:4], pi_ge_eq[4])
     row_p = dd.equilibrium_row(policy_slsqp[:4], policy_slsqp[4], τ10h_fixed=τP)
     b_path = tmp_path / f"diff_dest_baseline_{DD_TAG}_taul_0.216_equilibrium.csv"
-    p_path = tmp_path / f"diff_dest_pref_tax_13_{DD_TAG}_taul_0.216_equilibrium.csv"
+    p_path = tmp_path / f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_0.216_equilibrium.csv"
     pd.DataFrame([row_b]).to_csv(b_path, index=False)
     pd.DataFrame([row_p]).to_csv(p_path, index=False)
 

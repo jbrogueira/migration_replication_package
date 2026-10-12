@@ -55,7 +55,7 @@ L0, L1 = 1.0, 1.0
 tau_k = 0.18
 
 # --- Preferential tax on high skilled foreigners
-pref_tax = 0.13
+pref_tax = 0.114   # half the baseline average rate of high-skill immigrants (0.228)
 
 # --- Lambda grid parameters
 λ0_vals = np.linspace(1, 0.75, 250)
