@@ -10,6 +10,7 @@ from analysis.run_baseline import main as run_base
 from analysis.run_soe import main as run_soe
 from analysis.run_pref_tax import main as run_pref_tax
 from analysis.run_diff_dest import main as run_diff_dest
+from analysis.run_g_per_capita import main as run_g_per_capita
 from analysis.run_two_country import main as run_two_country_pe
 from analysis.run_pref_large import main as run_pref_large
 from analysis.run_pref_large_ge import main as run_pref_large_ge
@@ -55,6 +56,7 @@ def main():
     df_soe = run_soe()
     df_pref, df_tau10h = run_pref_tax()
     _, _, df_dd_base, df_dd_pref, df_dd_cross = run_diff_dest()
+    run_g_per_capita()   # spending proportional to the population: table + figure
     df_two_country_pe = run_two_country_pe()
     df_pref_large = run_pref_large()
     df_pref_large_gbc = run_pref_large_ge()

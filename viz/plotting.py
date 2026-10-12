@@ -331,6 +331,61 @@ def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
         plt.show()
 
 
+def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
+                             filename=None):
+    """
+    Small country with differentiated destinations, government spending proportional
+    to the resident population N. Left: tax revenue and required spending G0·N vs.
+    1-λ0, with and without the preferential tax. Right: tax revenue per resident vs. G0.
+
+    Parameters:
+    - df_base, df_pref: sweeps without / with the preferential tax ('λ0','TR',
+      'p00l','p10l','p00h','p10h' columns)
+    - star_tau: 1 - λ* at the calibrated baseline
+    - G0: government expenditure at the baseline (N = 1)
+    - eq_fixed, eq_gpc: equilibria with the preferential tax, (λ0, N), under G = G0
+      and G = G0·N
+    """
+    stocks = ['p00l', 'p10l', 'p00h', 'p10h']
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    for ax, per_resident in zip(axes, (False, True)):
+        for df, col, mk, mev, lab in (
+                (df_base, '#0072B2', 'o', (0, 12), "No preferential tax"),
+                (df_pref, '#D55E00', 's', (4, 12), "Preferential tax")):
+            N = df[stocks].sum(axis=1)
+            ax.plot(
+                1 - df['λ0'], df['TR'] / N if per_resident else df['TR'],
+                linestyle='-', color=col, linewidth=1.5,
+                marker=mk, markersize=6, markevery=mev,
+                markerfacecolor='white', markeredgecolor=col, label=lab
+            )
+            if not per_resident:
+                ax.plot(1 - df['λ0'], G0 * N, linestyle='--', color=col, linewidth=1.1,
+                        label=r"$G_0 N$, " + lab[0].lower() + lab[1:])
+
+        ax.axvline(x=star_tau, linestyle='--', linewidth=1.2,
+                   color='#E69F00', label=r"baseline $1-\lambda_0$")
+        ax.axhline(y=G0, linestyle=':', linewidth=1.2, color='#009E73', label=r"$G_0$")
+
+        for (λ0, N), mk, lab in ((eq_fixed, 'o', r"equilibrium, $G = G_0$"),
+                                 (eq_gpc, 'D', r"equilibrium, $G = G_0 N$")):
+            G = G0 * N if mk == 'D' else G0
+            ax.plot(1 - λ0, G / N if per_resident else G, mk, markersize=9,
+                    markerfacecolor='none', markeredgecolor='k', label=lab)
+
+        ax.set_xlabel(r"$1-\lambda_0$")
+        ax.set_ylabel("Tax revenue per resident" if per_resident else "Tax revenue")
+        ax.legend(frameon=False, fontsize=9)
+        ax.grid(True, linestyle=':', linewidth=0.6, color='0.75')
+
+    plt.tight_layout()
+    if filename:
+        plt.savefig(filename)
+        plt.close()
+    else:
+        plt.show()
+
+
 def plot_comparison(df_sym, df_soe, star_tau, G0, filename=None,
                     mark_equilibrium=False,  # new
                     eq_kwargs=None):         # optional style overrides

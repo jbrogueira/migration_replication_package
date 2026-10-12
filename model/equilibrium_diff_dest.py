@@ -93,8 +93,15 @@ def _immigrant_residuals(p0, τ0, θ):
 
 
 # --- Residual ---
+def required_spending(p0, g_per_capita: bool = False) -> float:
+    """Government spending G0, or G0 times the resident population (g_per_capita),
+    which equals G0 at the baseline, where the resident population is one."""
+    return G0 * float(np.sum(p0[:4])) if g_per_capita else G0
+
+
 def err_diff_dest(params, out: int = 1, custom_λ0: Optional[float] = None,
-                  custom_τ10h: Optional[float] = None, θ: float = θ_default):
+                  custom_τ10h: Optional[float] = None, θ: float = θ_default,
+                  g_per_capita: bool = False):
     p0 = np.asarray(params, dtype=float)[:4]
     λ0 = params[4] if custom_λ0 is None else custom_λ0
 
@@ -115,7 +122,7 @@ def err_diff_dest(params, out: int = 1, custom_λ0: Optional[float] = None,
         rev_labor0 = (p0[0]*τ00l*w00l + p0[1]*τ10l*w10l +
                       p0[2]*τ00h*w00h + p0[3]*τ10h*w10h)
         rev_cap0 = cap_tax_revenue(p0, ri(0, p0), ri(1, p_foreign))
-        res.insert(0, rev_labor0 + rev_cap0 - G0)                     # budget clearing
+        res.insert(0, rev_labor0 + rev_cap0 - required_spending(p0, g_per_capita))  # budget clearing
 
     return np.sum(np.square(res)) if out == 1 else res
 
@@ -164,30 +171,34 @@ def equilibrium_row(p0, λ0: float, τ10h_fixed: Optional[float] = None,
 
 # --- Solvers ---
 def solve_diff_dest(custom_τ10h: Optional[float] = None, x0_init=None,
-                    θ: float = θ_default) -> np.ndarray:
+                    θ: float = θ_default, g_per_capita: bool = False) -> np.ndarray:
     """Joint budget-clearing solve; returns [p00l, p10l, p00h, p10h, λ0]."""
     x0i = (np.asarray(x0_init, dtype=float) if x0_init is not None
            else np.concatenate([p_foreign, [λ_star]]))
     sol = optimize.minimize(
-        lambda v: err_diff_dest(v, out=1, custom_τ10h=custom_τ10h, θ=θ),
+        lambda v: err_diff_dest(v, out=1, custom_τ10h=custom_τ10h, θ=θ,
+                                g_per_capita=g_per_capita),
         x0i, method='SLSQP', bounds=bnds, tol=1e-12,
         options={"ftol": 1e-12, "maxiter": 1000},
     )
     assert sol.success, f"diff-dest solve failed (θ={θ}): {sol.message}"
     assert sol.fun < 1e-8, f"diff-dest residual too large (θ={θ}): {sol.fun:.2e}"
     # polish on the residual vector (square system)
-    pol = optimize.root(lambda v: err_diff_dest(v, out=0, custom_τ10h=custom_τ10h, θ=θ),
+    pol = optimize.root(lambda v: err_diff_dest(v, out=0, custom_τ10h=custom_τ10h, θ=θ,
+                                              g_per_capita=g_per_capita),
                         sol.x, method='hybr', tol=1e-14)
-    res = lambda v: np.max(np.abs(err_diff_dest(v, out=0, custom_τ10h=custom_τ10h, θ=θ)))
+    res = lambda v: np.max(np.abs(err_diff_dest(v, out=0, custom_τ10h=custom_τ10h, θ=θ,
+                                                g_per_capita=g_per_capita)))
     return pol.x if res(pol.x) < res(sol.x) else sol.x
 
 
 def solve_diff_dest_damped(custom_τ10h: Optional[float] = None, damping: float = 0.5,
                            tol: float = 1e-12, maxit: int = 2000,
-                           θ: float = θ_default) -> np.ndarray:
+                           θ: float = θ_default, g_per_capita: bool = False) -> np.ndarray:
     """
     Cross-validation solve: inner damped iteration on the stock map, outer brentq
-    on budget clearing g(λ0) = TR − G0. Returns [p00l, p10l, p00h, p10h, λ0].
+    on budget clearing g(λ0) = TR − G, with G = G0 or G0 times the resident population.
+    Returns [p00l, p10l, p00h, p10h, λ0].
     """
     if np.isinf(θ):
         raise ValueError("damped stock iteration needs a finite θ")
@@ -217,7 +228,9 @@ def solve_diff_dest_damped(custom_τ10h: Optional[float] = None, damping: float 
         raise RuntimeError(f"damped stock iteration did not converge at λ0={λ0}")
 
     def _g(λ0: float) -> float:
-        return equilibrium_row(_stocks_at(λ0), λ0, τ10h_fixed=custom_τ10h)["TR"] - G0
+        p = _stocks_at(λ0)
+        return (equilibrium_row(p, λ0, τ10h_fixed=custom_τ10h)["TR"]
+                - required_spending(p, g_per_capita))
 
     # the revenue curve can cross G0 twice at high σ: scan λ0 descending from 1
     # and bracket the first crossing — the sweep-selection convention (first
