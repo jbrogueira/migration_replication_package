@@ -1,7 +1,9 @@
 # analysis/run_g_per_capita.py
 # Preferential tax with government spending proportional to the resident population:
 # each budget clears at TR_i = G_i · N_i, N_i = resident population of country i (N_i = 1
-# at the baseline). The tax levels λ adjust; everything else as in the main experiments.
+# at the baseline). With --share s < 1, only the share s of spending (the rival share) is
+# proportional to the population: TR_i = G_i · [(1 − s) + s · N_i].
+# The tax levels λ adjust; everything else as in the main experiments.
 #   (1) small country, differentiated destinations (θ finite)
 #   (2) small country, perfect-substitutes limit (θ = inf)
 #   (3) large country, unilateral adoption (country 1's spending also scales with N_1)
@@ -28,6 +30,25 @@ from analysis.build_equilibrium_tables import (
 from viz.plotting import plot_g_per_capita_laffer
 from config import (pref_tax as pref_tax_default, λ0_vals, G0, G1, bounds_lambda_8,
                     DD_TAG, SIG_TAG, τl)
+
+
+def _scale(N, share: float):
+    """Required spending relative to the baseline: (1 − s) + s·N."""
+    return (1.0 - float(share)) + float(share) * N
+
+
+def _names(share: float) -> dict:
+    """File prefixes, table labels and caption wording; share = 1 keeps the
+    per-resident names."""
+    if share == 1.0:
+        return dict(key="gpc", fig="g_per_capita", label="g-per-capita",
+                    rule="G0·N",
+                    words="government spending proportional to the resident population")
+    t = f"{share:.2f}".replace(".", "p")
+    return dict(key=f"grival_{t}", fig=f"g_rival_{t}", label="g-rival",
+                rule=f"G0·[(1−{share})+{share}·N]",
+                words=(f"a share {share:.2f} of government spending proportional to the "
+                       "resident population"))
 
 CSV_DIR = "output/tables/csv"
 FIG_DIR = "output/figures"
@@ -62,12 +83,12 @@ def _solve_perfect_substitutes(df_pref: pd.DataFrame, pref_tax: float,
     where no budget-clearing equilibrium exists.
     """
     N = df_pref[STOCKS0].sum(axis=1)
-    above = (df_pref['TR'] - (G0 * N if g_per_capita else G0) >= 0).to_numpy()
+    above = (df_pref['TR'] - G0 * _scale(N, g_per_capita) >= 0).to_numpy()
     λ = df_pref['λ0'].to_numpy()
     step = abs(λ0_vals[1] - λ0_vals[0])
     idx = np.where(above[1:] != above[:-1])[0]
     adjacent = [i for i in idx if abs(λ[i + 1] - λ[i]) < 1.5 * step]
-    rule = "G0·N" if g_per_capita else "G0"
+    rule = _names(float(g_per_capita))["rule"] if g_per_capita else "G0"
     if len(idx) != 1 or len(adjacent) != 1:
         print(f"DIAGNOSTIC FLAG: perfect substitutes, G = {rule}: {len(idx)} sign changes of "
               f"TR − G on the solvable λ0 grid ({len(adjacent)} between adjacent points); "
@@ -95,9 +116,10 @@ def _small_row(x, pref_tax, g_per_capita, θ=None):
     return row
 
 
-def small_country(pref_tax: float, tag: str) -> dict:
-    # zero-policy gate: at N = 1 the per-resident rule reproduces the baseline
-    x_zero = solve_diff_dest(None, g_per_capita=True)
+def small_country(pref_tax: float, tag: str, share: float = 1.0) -> dict:
+    nm = _names(share)
+    # zero-policy gate: at N = 1 the spending rule reproduces the baseline
+    x_zero = solve_diff_dest(None, g_per_capita=share)
     assert np.max(np.abs(x_zero - pi_ge_eq)) < 1e-6, "zero-policy gate failed"
     row_b = equilibrium_row(pi_ge_eq[:4], pi_ge_eq[4], fun=err_diff_dest(pi_ge_eq, out=1))
     base_path = f"{CSV_DIR}/diff_dest_baseline_{DD_TAG}_taul_{τl}_equilibrium.csv"
@@ -105,51 +127,50 @@ def small_country(pref_tax: float, tag: str) -> dict:
 
     rows = {}
     # (1) differentiated destinations
-    for name, gpc in (("fixedG", False), ("gpc", True)):
+    for name, gpc in (("fixedG", False), (nm["key"], share)):
         rows[f"dd_{name}"] = _small_row(_solve_exact(pref_tax, gpc), pref_tax, gpc)
         pd.DataFrame([rows[f"dd_{name}"]]).to_csv(
             f"{CSV_DIR}/diff_dest_{name}_{tag}_equilibrium.csv", index=False)
     build_equilibrium_tables_diff_dest(
         baseline_eq_path=base_path,
-        pref_eq_path=f"{CSV_DIR}/diff_dest_gpc_{tag}_equilibrium.csv",
+        pref_eq_path=f"{CSV_DIR}/diff_dest_{nm['key']}_{tag}_equilibrium.csv",
         caption=("{Unilateral preferential tax in the small country with differentiated "
-                 "destinations, government spending proportional to the resident population: "
-                 + TABLE_TAIL),
-        label="tab:g-per-capita",
+                 f"destinations, {nm['words']}: " + TABLE_TAIL),
+        label=f"tab:{nm['label']}",
     )
     df_base = sweep_diff_dest(λ0_vals)
     df_pref = sweep_diff_dest(λ0_vals, custom_τ10h=pref_tax)
     plot_g_per_capita_laffer(
         df_base, df_pref, tau_star, G0,
         eq_fixed=(rows["dd_fixedG"]["λ0"], rows["dd_fixedG"]["N"]),
-        eq_gpc=(rows["dd_gpc"]["λ0"], rows["dd_gpc"]["N"]),
-        filename=os.path.join(FIG_DIR, f"g_per_capita_laffer_{tag}.png"),
+        eq_gpc=(rows[f"dd_{nm['key']}"]["λ0"], rows[f"dd_{nm['key']}"]["N"]),
+        filename=os.path.join(FIG_DIR, f"{nm['fig']}_laffer_{tag}.png"), share=share,
     )
 
     # (2) perfect-substitutes limit
     df_base_ps = sweep_diff_dest(λ0_vals, θ=np.inf)
     df_pref_ps = sweep_diff_dest(λ0_vals, custom_τ10h=pref_tax, θ=np.inf)
-    for name, gpc in (("fixedG", False), ("gpc", True)):
+    for name, gpc in (("fixedG", False), (nm["key"], share)):
         x = _solve_perfect_substitutes(df_pref_ps, pref_tax, gpc)
         rows[f"ps_{name}"] = None if x is None else _small_row(x, pref_tax, gpc, θ=np.inf)
-    if rows["ps_gpc"] is not None:
+    if rows[f"ps_{nm['key']}"] is not None:
         # file name keeps the SOE mirroring rule of build_equilibrium_tables (foreign side frozen)
-        ps_path = (f"{CSV_DIR}/gpc_soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}"
+        ps_path = (f"{CSV_DIR}/{nm['key']}_soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}"
                    f"_equilibrium.csv")
-        pd.DataFrame([rows["ps_gpc"]]).to_csv(ps_path, index=False)
+        pd.DataFrame([rows[f"ps_{nm['key']}"]]).to_csv(ps_path, index=False)
         build_equilibrium_tables(
             pref_eq_path=ps_path,
             caption=("{Unilateral preferential tax in the small country in the perfect-substitutes "
-                     "limit, government spending proportional to the resident population: "
-                     + TABLE_TAIL),
-            label="tab:g-per-capita-ps",
+                     f"limit, {nm['words']}: " + TABLE_TAIL),
+            label=f"tab:{nm['label']}-ps",
         )
         eq_of = lambda r: None if r is None else (r["λ0"], r["N"])
         plot_g_per_capita_laffer(
             df_base_ps, df_pref_ps, tau_star, G0,
-            eq_fixed=eq_of(rows["ps_fixedG"]), eq_gpc=eq_of(rows["ps_gpc"]),
+            eq_fixed=eq_of(rows["ps_fixedG"]), eq_gpc=eq_of(rows[f"ps_{nm['key']}"]),
             filename=os.path.join(
-                FIG_DIR, f"g_per_capita_laffer_ps_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}.png"),
+                FIG_DIR, f"{nm['fig']}_laffer_ps_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}.png"),
+            share=share,
         )
     return rows
 
@@ -157,14 +178,15 @@ def small_country(pref_tax: float, tag: str) -> dict:
 # --- (3)-(4) Two large countries --------------------------------------------
 def _two_country(residual, pref_tax: float, g_per_capita: bool, tau_kw: dict, tau_pref):
     """λ0 sweep with λ1 clearing country 1's budget, then the exact crossing of
-    country 0's budget (revenue per resident = G0 under the per-resident rule)."""
+    country 0's budget, TR0 / [(1 − s) + s·N0] = G0 (s = 0 constant spending, s = 1
+    revenue per resident = G0)."""
     err = lambda p, out, l0, l1, *_, **__: residual(p, out, l0, None, tau_pref,
                                                     g_per_capita=g_per_capita)
     x0 = np.concatenate([pi_ge_eq[:4], pi_ge_eq[:4], [pi_ge_eq[4]]])
-    add_pc = lambda d: d.assign(TR0pc=d['TR0'] / d[STOCKS0].sum(axis=1))
+    add_pc = lambda d: d.assign(TR0adj=d['TR0'] / _scale(d[STOCKS0].sum(axis=1), g_per_capita))
     df = add_pc(sweep_equilibrium_2country(err, λ0_vals, None, bounds_lambda_8, x0=x0,
                                            free_lambda1=True, **tau_kw))
-    trcol = 'TR0pc' if g_per_capita else 'TR0'
+    trcol = 'TR0adj'
     warm = df[df[trcol] >= G0].head(1)[STOCKS0 + STOCKS1 + ['λ1']].to_numpy()[0]
     eq = refine_crossing(
         df, 'λ0', trcol, G0,
@@ -172,55 +194,58 @@ def _two_country(residual, pref_tax: float, g_per_capita: bool, tau_kw: dict, ta
                                                      free_lambda1=True, **tau_kw)))
     r = eq.iloc[0]
     N0, N1 = r[STOCKS0].sum(), r[STOCKS1].sum()
-    assert abs(r['TR0'] - G0 * (N0 if g_per_capita else 1.0)) < 1e-7, "country 0 budget"
-    assert abs(r['TR1'] - G1 * (N1 if g_per_capita else 1.0)) < 1e-7, "country 1 budget"
+    assert abs(r['TR0'] - G0 * _scale(N0, g_per_capita)) < 1e-7, "country 0 budget"
+    assert abs(r['TR1'] - G1 * _scale(N1, g_per_capita)) < 1e-7, "country 1 budget"
     return df, eq.assign(N0=N0, N1=N1)
 
 
-def large_countries(pref_tax: float) -> dict:
+def large_countries(pref_tax: float, share: float = 1.0) -> dict:
+    nm, k = _names(share), _names(share)["key"]
     out = {}
 
     # (3) unilateral adoption; the no-preferential-tax sweep is drawn for reference
     uni = dict(tau10h_override=pref_tax)
     _, out["lc_fixedG"] = _two_country(ge_pref_residual_unilateral, pref_tax, False, uni, pref_tax)
-    df_pref, out["lc_gpc"] = _two_country(ge_pref_residual_unilateral, pref_tax, True, uni, pref_tax)
-    df_none, _ = _two_country(ge_pref_residual_unilateral, pref_tax, True, {}, None)
-    lc_path = f"{CSV_DIR}/gpc_two_country_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv"
-    out["lc_gpc"].to_csv(lc_path, index=False)
+    df_pref, out[f"lc_{k}"] = _two_country(ge_pref_residual_unilateral, pref_tax, share, uni,
+                                           pref_tax)
+    df_none, _ = _two_country(ge_pref_residual_unilateral, pref_tax, share, {}, None)
+    lc_path = f"{CSV_DIR}/{k}_two_country_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv"
+    out[f"lc_{k}"].to_csv(lc_path, index=False)
     build_equilibrium_tables(
         pref_eq_path=lc_path,
-        caption=("{Unilateral preferential tax in a large country, government spending "
-                 "proportional to the resident population, country~0: " + TABLE_TAIL),
-        label="tab:g-per-capita-lc",
+        caption=(f"{{Unilateral preferential tax in a large country, {nm['words']}, "
+                 "country~0: " + TABLE_TAIL),
+        label=f"tab:{nm['label']}-lc",
     )
     build_equilibrium_tables1(
         pref_eq_path=lc_path,
-        caption=("{Unilateral preferential tax in a large country, government spending "
-                 "proportional to the resident population, country~1: " + TABLE_TAIL),
-        label="tab:g-per-capita-lc-cty1",
+        caption=(f"{{Unilateral preferential tax in a large country, {nm['words']}, "
+                 "country~1: " + TABLE_TAIL),
+        label=f"tab:{nm['label']}-lc-cty1",
     )
     to_small = lambda d: d.rename(columns={'TR0': 'TR'})
-    r_f, r_g = out["lc_fixedG"].iloc[0], out["lc_gpc"].iloc[0]
+    r_f, r_g = out["lc_fixedG"].iloc[0], out[f"lc_{k}"].iloc[0]
     plot_g_per_capita_laffer(
         to_small(df_none), to_small(df_pref), tau_star, G0,
         eq_fixed=(r_f['λ0'], r_f['N0']), eq_gpc=(r_g['λ0'], r_g['N0']),
-        filename=os.path.join(FIG_DIR, f"g_per_capita_laffer_lc_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}.png"),
+        filename=os.path.join(FIG_DIR, f"{nm['fig']}_laffer_lc_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}.png"),
+        share=share,
     )
 
     # (4) multilateral adoption: symmetric, so N_0 = N_1 = 1 and the equilibrium is unchanged
     glob = dict(tau_high_imm_override=pref_tax)
     _, out["mlt_fixedG"] = _two_country(ge_pref_residual_global, pref_tax, False, glob, pref_tax)
-    _, out["mlt_gpc"] = _two_country(ge_pref_residual_global, pref_tax, True, glob, pref_tax)
+    _, out[f"mlt_{k}"] = _two_country(ge_pref_residual_global, pref_tax, share, glob, pref_tax)
     cols = ['λ0', 'λ1'] + STOCKS0 + STOCKS1
-    gap = np.max(np.abs(out["mlt_gpc"][cols].to_numpy() - out["mlt_fixedG"][cols].to_numpy()))
-    assert gap < 1e-6, f"multilateral: per-resident rule moves the equilibrium ({gap:.1e})"
-    out["mlt_gpc"].to_csv(
-        f"{CSV_DIR}/gpc_global_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv",
+    gap = np.max(np.abs(out[f"mlt_{k}"][cols].to_numpy() - out["mlt_fixedG"][cols].to_numpy()))
+    assert gap < 1e-6, f"multilateral: spending rule moves the equilibrium ({gap:.1e})"
+    out[f"mlt_{k}"].to_csv(
+        f"{CSV_DIR}/{k}_global_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv",
         index=False)
     return out
 
 
-def main(pref_tax: float = pref_tax_default):
+def main(pref_tax: float = pref_tax_default, share: float = 1.0):
     os.makedirs(CSV_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
     tag = f"pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_{τl}"
@@ -228,23 +253,26 @@ def main(pref_tax: float = pref_tax_default):
     if not os.path.exists(f"{CSV_DIR}/baseline_{SIG_TAG}_taul_{τl}_equilibrium.csv"):
         from analysis.run_baseline import main as run_baseline
         run_baseline()
-    rows = small_country(pref_tax, tag)
-    rows.update(large_countries(pref_tax))
+    rows = small_country(pref_tax, tag, share)
+    rows.update(large_countries(pref_tax, share))
     return rows
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--pref-tax", type=float, default=pref_tax_default)
+    ap.add_argument("--share", type=float, default=1.0,
+                    help="share of spending proportional to the population (1 = per resident)")
     args = ap.parse_args()
-    rows = main(args.pref_tax)
-    for k in ("dd_fixedG", "dd_gpc", "ps_fixedG", "ps_gpc"):
+    rows = main(args.pref_tax, args.share)
+    key = _names(args.share)["key"]
+    for k in ("dd_fixedG", f"dd_{key}", "ps_fixedG", f"ps_{key}"):
         r = rows[k]
         if r is None:
             print(f"{k:10s} no budget-clearing equilibrium")
             continue
         print(f"{k:10s} 1-λ0 = {1 - r['λ0']:.4f}  N = {r['N']:.4f}  G = {r['G']:.4f}")
-    for k in ("lc_fixedG", "lc_gpc", "mlt_fixedG", "mlt_gpc"):
+    for k in ("lc_fixedG", f"lc_{key}", "mlt_fixedG", f"mlt_{key}"):
         r = rows[k].iloc[0]
         print(f"{k:10s} 1-λ0 = {1 - r['λ0']:.4f}  1-λ1 = {1 - r['λ1']:.4f}  "
               f"N0 = {r['N0']:.4f}  N1 = {r['N1']:.4f}")

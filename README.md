@@ -14,7 +14,7 @@ migration_replication_package/
 │   ├── run_taul_*.py          # Progressivity parameter clears the budget (appendix)
 │   ├── run_theta_sweep.py     # Small country for several values of theta (appendix)
 │   ├── run_temporary_tax.py   # Temporary preferential tax (appendix)
-│   ├── run_g_per_capita.py    # Government spending proportional to the population (appendix)
+│   ├── run_g_per_capita.py    # Government spending proportional to the population, in full or in its rival share (appendix)
 │   ├── run_sigma_theta_grid.py  # Sensitivity to sigma and theta
 │   ├── build_equilibrium_tables.py, exact_refine.py, run_variant.py
 ├── model/                     # Calibration, equations, equilibrium solvers
@@ -68,7 +68,7 @@ python run_paper.py
 
 This runs:
 
-- `run_all.py` at the baseline calibration: the multilateral and unilateral Laffer curves, the small country with differentiated destinations and in the perfect-substitutes limit, the large country, multilateral adoption, the progressivity variant, government spending proportional to the population (`analysis.run_g_per_capita`), and the theta sweep (`output/tables/`, `output/figures/`);
+- `run_all.py` at the baseline calibration: the multilateral and unilateral Laffer curves, the small country with differentiated destinations and in the perfect-substitutes limit, the large country, multilateral adoption, the progressivity variant, government spending proportional to the population, in full and in its rival share 0.62 (`analysis.run_g_per_capita`, `--share`), and the theta sweep (`output/tables/`, `output/figures/`);
 - the temporary preferential tax (`analysis.run_temporary_tax`);
 - the variants sigma = theta = 2, epsilon = 20 and land (gamma = 0.05), each in a temporary copy of the package, collected in `output/variants/{sig2,eps20,gamma005}/`;
 - the sensitivity to sigma and theta (`analysis.run_sigma_theta_grid`), in `output/variants/sigma_theta_grid/`.

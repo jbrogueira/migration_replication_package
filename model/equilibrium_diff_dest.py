@@ -93,15 +93,17 @@ def _immigrant_residuals(p0, τ0, θ):
 
 
 # --- Residual ---
-def required_spending(p0, g_per_capita: bool = False) -> float:
-    """Government spending G0, or G0 times the resident population (g_per_capita),
-    which equals G0 at the baseline, where the resident population is one."""
-    return G0 * float(np.sum(p0[:4])) if g_per_capita else G0
+def required_spending(p0, g_per_capita: float = False) -> float:
+    """Government spending G0·[(1 − s) + s·N], N = resident population, s = g_per_capita
+    the share of spending proportional to the population (False/0: constant G0;
+    True/1: G0·N). Equals G0 at the baseline, where the resident population is one."""
+    s = float(g_per_capita)
+    return G0 * ((1.0 - s) + s * float(np.sum(p0[:4])))
 
 
 def err_diff_dest(params, out: int = 1, custom_λ0: Optional[float] = None,
                   custom_τ10h: Optional[float] = None, θ: float = θ_default,
-                  g_per_capita: bool = False):
+                  g_per_capita: float = False):
     p0 = np.asarray(params, dtype=float)[:4]
     λ0 = params[4] if custom_λ0 is None else custom_λ0
 
@@ -171,7 +173,7 @@ def equilibrium_row(p0, λ0: float, τ10h_fixed: Optional[float] = None,
 
 # --- Solvers ---
 def solve_diff_dest(custom_τ10h: Optional[float] = None, x0_init=None,
-                    θ: float = θ_default, g_per_capita: bool = False) -> np.ndarray:
+                    θ: float = θ_default, g_per_capita: float = False) -> np.ndarray:
     """Joint budget-clearing solve; returns [p00l, p10l, p00h, p10h, λ0]."""
     x0i = (np.asarray(x0_init, dtype=float) if x0_init is not None
            else np.concatenate([p_foreign, [λ_star]]))
@@ -194,7 +196,7 @@ def solve_diff_dest(custom_τ10h: Optional[float] = None, x0_init=None,
 
 def solve_diff_dest_damped(custom_τ10h: Optional[float] = None, damping: float = 0.5,
                            tol: float = 1e-12, maxit: int = 2000,
-                           θ: float = θ_default, g_per_capita: bool = False) -> np.ndarray:
+                           θ: float = θ_default, g_per_capita: float = False) -> np.ndarray:
     """
     Cross-validation solve: inner damped iteration on the stock map, outer brentq
     on budget clearing g(λ0) = TR − G, with G = G0 or G0 times the resident population.

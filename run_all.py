@@ -4,7 +4,7 @@ import pandas as pd
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-from config import σ, θ, G0, pref_tax, τl, γ, SIG_TAG, DD_TAG
+from config import σ, θ, G0, pref_tax, τl, γ, SIG_TAG, DD_TAG, g_rival_share
 from model.equilibrium import pi_ge_eq, tau10h_star, tau_star
 from analysis.run_baseline import main as run_base
 from analysis.run_soe import main as run_soe
@@ -57,6 +57,7 @@ def main():
     df_pref, df_tau10h = run_pref_tax()
     _, _, df_dd_base, df_dd_pref, df_dd_cross = run_diff_dest()
     run_g_per_capita()   # spending proportional to the population: table + figure
+    run_g_per_capita(share=g_rival_share)   # rival share of spending proportional to the population
     df_two_country_pe = run_two_country_pe()
     df_pref_large = run_pref_large()
     df_pref_large_gbc = run_pref_large_ge()

@@ -56,6 +56,10 @@ tau_k = 0.18
 
 # --- Preferential tax on high skilled foreigners
 pref_tax = 0.114   # half the baseline average rate of high-skill immigrants (0.228)
+# Share of government spending proportional to the resident population (rival share):
+# individual consumption P31_S13 / government final consumption P3_S13, EU27, Eurostat
+# nama_10_gdp, current prices (0.621 in 2024; 0.620-0.630 over 2015-2025)
+g_rival_share = 0.62
 
 # --- Lambda grid parameters
 λ0_vals = np.linspace(1, 0.75, 250)

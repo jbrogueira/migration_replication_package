@@ -332,7 +332,7 @@ def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
 
 
 def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
-                             filename=None):
+                             filename=None, share=1.0):
     """
     Government spending proportional to the resident population N of country 0 (small
     country with differentiated destinations or in the perfect-substitutes limit, or the
@@ -346,7 +346,12 @@ def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
     - G0: government expenditure at the baseline (N = 1)
     - eq_fixed, eq_gpc: equilibria with the preferential tax, (λ0, N), under G = G0
       and G = G0·N; None skips the marker (no budget-clearing equilibrium)
+    - share: share s of spending proportional to the population; with s < 1 the required
+      spending is G0·[(1 − s) + s·N], drawn dashed in both panels
     """
+    scale = lambda N: (1.0 - share) + share * N
+    g_tex = (r"$G_0 N$" if share == 1.0
+             else rf"$G_0[{1 - share:.2f} + {share:.2f} N]$")
     stocks = ['p00l', 'p10l', 'p00h', 'p10h']
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     for ax, per_resident in zip(axes, (False, True)):
@@ -361,18 +366,21 @@ def plot_g_per_capita_laffer(df_base, df_pref, star_tau, G0, eq_fixed, eq_gpc,
                 markerfacecolor='white', markeredgecolor=col, label=lab
             )
             if not per_resident:
-                ax.plot(1 - df['λ0'], G0 * N, linestyle='--', color=col, linewidth=1.1,
-                        label=r"$G_0 N$, " + lab[0].lower() + lab[1:])
+                ax.plot(1 - df['λ0'], G0 * scale(N), linestyle='--', color=col, linewidth=1.1,
+                        label=g_tex + ", " + lab[0].lower() + lab[1:])
+            elif share != 1.0:
+                ax.plot(1 - df['λ0'], G0 * scale(N) / N, linestyle='--', color=col,
+                        linewidth=1.1, label=g_tex + r"$/N$, " + lab[0].lower() + lab[1:])
 
         ax.axvline(x=star_tau, linestyle='--', linewidth=1.2,
                    color='#E69F00', label=r"baseline $1-\lambda_0$")
         ax.axhline(y=G0, linestyle=':', linewidth=1.2, color='#009E73', label=r"$G_0$")
 
         for (λ0, N), mk, lab in ((eq_fixed or (None, None), 'o', r"equilibrium, $G = G_0$"),
-                                 (eq_gpc or (None, None), 'D', r"equilibrium, $G = G_0 N$")):
+                                 (eq_gpc or (None, None), 'D', r"equilibrium, $G = $" + g_tex)):
             if (λ0, N) == (None, None):
                 continue
-            G = G0 * N if mk == 'D' else G0
+            G = G0 * scale(N) if mk == 'D' else G0
             ax.plot(1 - λ0, G / N if per_resident else G, mk, markersize=9,
                     markerfacecolor='none', markeredgecolor='k', label=lab)
 

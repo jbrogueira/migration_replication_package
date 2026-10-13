@@ -248,11 +248,12 @@ def err_2country(
     tau_high_imm_override=None,   # GLOBAL: sets τ10h (C0) and τ01h (C1)
     tau10h_override=None,         # UNILATERAL: sets τ10h (C0) only if GLOBAL is None
     mode='GE',                    # 'GE' → λ1 from params[-1] and adds C1 GBC; 'PE' → λ1 from arg
-    g_per_capita=False            # C1 spending G1 times its resident population (1 at baseline)
+    g_per_capita=False            # share s of C1 spending proportional to its resident population
 ):
     """Two-country residual. Country 0's budget is not in this system: callers clear it
-    outside (λ0 sweep + root-find), against G0 or, with g_per_capita, against G0 times
-    country 0's resident population. g_per_capita here applies to country 1 only."""
+    outside (λ0 sweep + root-find), against G0 or, with g_per_capita = s, against
+    G0·[(1 − s) + s·N0], N0 = country 0's resident population (True: s = 1).
+    g_per_capita here applies to country 1 only: G1·[(1 − s) + s·N1]."""
     if λ0 is None:
         raise ValueError("Pass λ0 via argument.")
 
@@ -301,7 +302,8 @@ def err_2country(
     if mode == 'GE':
         TR1_lab = (p1[0]*τ11l*w11l + p1[1]*τ01l*w01l + p1[2]*τ11h*w11h + p1[3]*τ01h*w01h)
         TR1_cap = cap_tax_revenue(p1, ri(1, p1), ri(0, p0))   # residence-based
-        G1_req = G1 * float(np.sum(p1)) if g_per_capita else G1
+        s = float(g_per_capita)
+        G1_req = G1 * ((1.0 - s) + s * float(np.sum(p1)))
         err.insert(0, TR1_lab + TR1_cap - G1_req)
 
     return np.sum(np.square(err)) if out == 1 else err
