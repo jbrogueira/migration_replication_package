@@ -5,7 +5,9 @@ function run_cops(cc)
 %% (baseline_sig_1p323_taul_0.216 equilibrium). Previous rerun (recalib_v5):
 %% 0.2372 / 0.1598; engine defaults 0.24 / 0.18. All other
 %% settings as R4/R5: indexed baseline schedule, closed budget at the target
-%% country, k_temp_pref = 10, tau_P homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13.
+%% country, k_temp_pref = 10, tau_P homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13 -> 0.114.
+%% The paper's rate 0.114 is half the baseline average rate of high-skill
+%% immigrants in the static model (0.2284).
 %% cc = 'pt' (16), 'es' (8) or 'de' (5).
 %%
 %% Run from cops/runs (outputs and diagnostic folders land there):
@@ -14,7 +16,8 @@ function run_cops(cc)
 %% Stages: zero-policy sanity-check run (must reproduce the baseline; hard
 %% gate), open-budget solve at 0.2127 from the V = 1 seed, closed-budget
 %% Anderson homotopy seeded from the open solution, target-country stock dump
-%% per step, per-period value-based CEV at tau_P = 0.13.
+%% per step, per-period value-based CEV at tau_P = 0.114. Each step stops with an
+%% error if it does not converge.
   switch cc
       case 'pt'; ic = 16;
       case 'es'; ic = 8;
@@ -69,8 +72,8 @@ function run_cops(cc)
   Vcur = Vsol; %#ok<NASGU>
   save('-v7', sprintf('%s_open.mat', pfx), 'Vcur', 'info');
 
-  %% ---- closed-budget homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13 ----
-  steps = [0.2127, 0.19, 0.16, 0.13];
+  %% ---- closed-budget homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13 -> 0.114 ----
+  steps = [0.2127, 0.19, 0.16, 0.13, 0.114];
   seedfile = sprintf('%s_open.mat', pfx);
   for k = 1:numel(steps)
       tp = steps(k);
@@ -88,6 +91,9 @@ function run_cops(cc)
       Vcur = Vsol; %#ok<NASGU>
       fname = sprintf('%s_taup_%s.mat', pfx, tag);
       save('-v7', fname, 'Vcur', 'info');
+      if info.F_final > np.tol_F
+          error('v6:conv', '%s tau_P=%.4f not converged: |F|=%.3e', pfx, tp, info.F_final);
+      end
       dg = info.dg;
       printf('lambda in [%.4f, %.4f]  max|budget resid|=%.2e\n', ...
           min(dg.lambda_hat_path(2:end-1)), max(dg.lambda_hat_path(2:end-1)), ...
@@ -105,7 +111,7 @@ function run_cops(cc)
   end
 
   %% ---- per-period value-based CEV at the target rate ----
-  printf('===== %s CEV paths at tau_P=0.13 =====\n', pfx); fflush(stdout);
-  compute_cev_paths(sprintf('%s_taup_0p13.mat', pfx), sprintf('%s_taup13', pfx), ic);
+  printf('===== %s CEV paths at tau_P=0.114 =====\n', pfx); fflush(stdout);
+  compute_cev_paths(sprintf('%s_taup_0p114.mat', pfx), sprintf('%s_taup114', pfx), ic);
   printf('===== %s DONE =====\n', pfx); fflush(stdout);
 end

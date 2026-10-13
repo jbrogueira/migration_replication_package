@@ -1,9 +1,10 @@
-"""Endpoint and welfare summary of a closed-budget preferential-tax run (tau_P = 0.13),
+"""Endpoint and welfare summary of a closed-budget preferential-tax run (default tau_P = 0.13),
 for the appendix tables tab:cops-transition and tab:cops-cev.
 
-Usage: python summarize_cops_run.py --dir recalib_v6 --prefix v6
+Usage: python summarize_cops_run.py --dir recalib_v6 --prefix v6 [--taup 0.13]
 reads {prefix}_{cc}_taup_0p13.mat, pt_stocks_{prefix}_{cc}_0p13.mat and
-cev_paths_{prefix}_{cc}_taup13.mat for cc in pt, es, de. End of the transition = slot 199
+cev_paths_{prefix}_{cc}_taup13.mat for cc in pt, es, de (tags follow --taup:
+0.114 -> 0p114, taup114). End of the transition = slot 199
 (index 198; slot 200 is the pinned terminal slice); announcement = slot 2 (index 1).
 CEV rows: employed workers of the adopting country (row = country index).
 """
@@ -19,10 +20,11 @@ def load(path):
     return scipy.io.loadmat(path, squeeze_me=True, struct_as_record=False)
 
 
-def summary(d, prefix, cc):
-    st = load(d / f"pt_stocks_{prefix}_{cc}_0p13.mat")["St"]
-    dg = load(d / f"{prefix}_{cc}_taup_0p13.mat")["info"].dg
-    cv = load(d / f"cev_paths_{prefix}_{cc}_taup13.mat")["out"]
+def summary(d, prefix, cc, taup=0.13):
+    t = f"{taup:.4g}".replace(".", "p")
+    st = load(d / f"pt_stocks_{prefix}_{cc}_{t}.mat")["St"]
+    dg = load(d / f"{prefix}_{cc}_taup_{t}.mat")["info"].dg
+    cv = load(d / f"cev_paths_{prefix}_{cc}_taup{t.removeprefix('0p')}.mat")["out"]
     ic = CTRY[cc]
     lam = dg.lambda_hat_path[1:-1]
     def c(name):
@@ -43,9 +45,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True)
     ap.add_argument("--prefix", required=True)
+    ap.add_argument("--taup", type=float, default=0.13)
     a = ap.parse_args()
     d = Path(__file__).parent / a.dir
-    out = {cc: summary(d, a.prefix, cc) for cc in CTRY}
+    out = {cc: summary(d, a.prefix, cc, a.taup) for cc in CTRY}
     for k in ("h_stock", "pool", "l_stock", "w_h", "w_l", "tau_h0", "tau_h1", "lam_dev", "budget_resid"):
         print(f"{k:13s}" + "".join(f"{out[cc][k]:>12.4g}" for cc in CTRY))
     for k in ("pref_eu15", "pref_nms8", "pref_oth", "std_eu15", "low_eu15"):

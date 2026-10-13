@@ -9,8 +9,10 @@ Reads the saved run outputs in this directory:
 
 Writes PNG figures to figures_transition/. Options select another run: --dir (folder of
 the run outputs), --prefix (e.g. v6_pt reads v6_pt_taup_0p13.mat, pt_stocks_v6_pt_*.mat,
-cev_paths_v6_pt_taup13.mat), --tau-h / --tau-l (baseline average rates drawn in the tax
-figure), --out (output folder). Defaults reproduce the July r4 run. Reform is announced and implemented,
+cev_paths_v6_pt_taup13.mat), --taup (preferential rate of the run; default 0.13),
+--hom-dir / --hom-prefix (folder and prefix of the earlier homotopy steps 0.2127/0.19/0.16/0.13
+when they live in another run, e.g. a run that extends the v6 homotopy), --tau-h / --tau-l
+(baseline average rates drawn in the tax figure), --out (output folder). Defaults reproduce the July r4 run. Reform is announced and implemented,
 unanticipated, at period 2; the terminal condition pins the value hats at T, so
 paths flatten mechanically near the horizon end.
 """
@@ -33,20 +35,28 @@ HIGH, LOW = "#0072B2", "#D55E00"  # high-/low-skill when groups are pooled
 ACCENT = "#E69F00"  # low contrast on white: use only with a direct label
 BASE_GRAY = "#666666"
 SEQ_BLUES = ["#9ecae1", "#6baed6", "#3182bd", "#08519c"]  # shallow -> deep cut
+SEQ_BLUES_5 = ["#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c"]
 
 TP = 0.13
-RUN = {"dir": HERE, "prefix": None, "tau_h": 0.24, "tau_l": 0.18}
+RUN = {"dir": HERE, "prefix": None, "tau_h": 0.24, "tau_l": 0.18, "hom_dir": None,
+       "hom_prefix": None}
 T_SHOW = 199  # slot 200 is the pinned terminal slice
 
 
-def load(name: str):
-    return scipy.io.loadmat(RUN["dir"] / name, squeeze_me=True, struct_as_record=False)
+def load(name: str, folder: Path = None):
+    return scipy.io.loadmat((folder or RUN["dir"]) / name, squeeze_me=True,
+                            struct_as_record=False)
+
+
+def tag(tp: float) -> str:
+    # file tag of a preferential rate, as in the Octave drivers: 0.13 -> 0p13
+    return f"{tp:.4g}".replace(".", "p")
 
 
 @dataclass
 class Data:
-    st: object            # PT stocks at tau_P = 0.13
-    dg: object            # per-period paths at tau_P = 0.13
+    st: object            # PT stocks at tau_P = TP
+    dg: object            # per-period paths at tau_P = TP
     cev: object           # CEV paths
     st_homotopy: dict     # tau_P -> stocks
 
@@ -61,12 +71,14 @@ def load_all() -> Data:
                 0.19: load("pt_stocks_r4_0p19.mat")["St"],
                 0.16: load("pt_stocks_r4_0p16.mat")["St"], 0.13: st}
     else:
-        st = load(f"pt_stocks_{p}_0p13.mat")["St"]
-        dg = load(f"{p}_taup_0p13.mat")["info"].dg
-        cev = load(f"cev_paths_{p}_taup13.mat")["out"]
-        st_h = {0.2127: load(f"pt_stocks_{p}_0p2127.mat")["St"],
-                0.19: load(f"pt_stocks_{p}_0p19.mat")["St"],
-                0.16: load(f"pt_stocks_{p}_0p16.mat")["St"], 0.13: st}
+        t = tag(TP)
+        st = load(f"pt_stocks_{p}_{t}.mat")["St"]
+        dg = load(f"{p}_taup_{t}.mat")["info"].dg
+        cev = load(f"cev_paths_{p}_taup{t.removeprefix('0p')}.mat")["out"]
+        hd, hp = RUN["hom_dir"] or RUN["dir"], RUN["hom_prefix"] or p
+        st_h = {tp: load(f"pt_stocks_{hp}_{tag(tp)}.mat", hd)["St"]
+                for tp in (0.2127, 0.19, 0.16, 0.13) if tp != TP}
+        st_h[TP] = st
     return Data(st, dg, cev, st_h)
 
 
@@ -159,7 +171,7 @@ def fig4_taxes_budget(d: Data) -> None:
             label="standard high-skill")
     ax.plot(tt, dg.tau_l_t_path[s], color=LOW, linewidth=1.8, label="low-skill")
     ax.axhline(TP, color=ACCENT, linewidth=1.8)
-    ax.text(T_SHOW * 0.98, TP + 0.003, "preferential rate 0.13", ha="right",
+    ax.text(T_SHOW * 0.98, TP + 0.003, f"preferential rate {TP:.4g}", ha="right",
             fontsize=9, color="#8a5a00")
     ax.axhline(RUN["tau_h"], color=BASE_GRAY, linewidth=0.8, linestyle="--")
     ax.axhline(RUN["tau_l"], color=BASE_GRAY, linewidth=0.8, linestyle="--")
@@ -236,8 +248,8 @@ def fig6_welfare(d: Data) -> None:
 
 def fig7_homotopy(d: Data) -> None:
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    for col, (tp, st) in zip(SEQ_BLUES, sorted(d.st_homotopy.items(),
-                                               reverse=True)):
+    cols = SEQ_BLUES if len(d.st_homotopy) <= 4 else SEQ_BLUES_5
+    for col, (tp, st) in zip(cols, sorted(d.st_homotopy.items(), reverse=True)):
         hr = trim(st.h_ratio)
         tt = t_of(hr)
         ax.plot(tt, 100 * (hr - 1), color=col, linewidth=1.8,
@@ -250,15 +262,20 @@ def fig7_homotopy(d: Data) -> None:
 
 
 def main() -> None:
-    global OUT
+    global OUT, TP
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=str(HERE))
     ap.add_argument("--prefix", default=None)
     ap.add_argument("--tau-h", type=float, default=0.24)
     ap.add_argument("--tau-l", type=float, default=0.18)
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--taup", type=float, default=0.13)
+    ap.add_argument("--hom-dir", default=None)
+    ap.add_argument("--hom-prefix", default=None)
     a = ap.parse_args()
-    RUN.update(dir=Path(a.dir), prefix=a.prefix, tau_h=a.tau_h, tau_l=a.tau_l)
+    TP = a.taup
+    RUN.update(dir=Path(a.dir), prefix=a.prefix, tau_h=a.tau_h, tau_l=a.tau_l,
+               hom_dir=Path(a.hom_dir) if a.hom_dir else None, hom_prefix=a.hom_prefix)
     OUT = Path(a.out)
     OUT.mkdir(exist_ok=True)
     d = load_all()
