@@ -69,3 +69,15 @@ def test_land_owned_by_natives_equals_land_stock():
     assert abs(config.ell_l * config.origin0_low + config.ell_h * config.origin0_high
                - config.L0) < 1e-12
     assert abs(config.ell_h / config.ell_l - TARGETS.skill_premium) < 1e-12
+
+
+def test_phi_recalibrated_to_baseline_wage_ratio_when_eps_differs():
+    # φ keeps the mean immigrant/native wage ratio of the baseline (φ = 0.72, ε = 7)
+    import config
+    from model.calibration import immigrant_wage_ratio, phi_for_wage_ratio
+    p = config.TARGETS.allocation()[0]
+    target = immigrant_wage_ratio(p, 7, 0.72)
+    assert abs(target - 0.90) < 0.005
+    phi20 = phi_for_wage_ratio(p, 20, target)
+    assert abs(immigrant_wage_ratio(p, 20, phi20) - target) < 1e-12
+    assert abs(round(phi20, 3) - 0.833) < 1e-12

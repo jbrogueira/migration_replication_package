@@ -1,8 +1,9 @@
 ### config.py
+import dataclasses
 import os
 import numpy as np
 
-from model.calibration import Targets, calibrate
+from model.calibration import Targets, calibrate, immigrant_wage_ratio, phi_for_wage_ratio
 
 
 def _env_param(name, default):
@@ -22,21 +23,96 @@ def _fmt(x):
     return str(int(x)) if float(x).is_integer() else str(x).replace(".", "p")
 
 
+# --- Calibration targets (app:data, app:calibration)
+# EU 2024, ages 25–64: population by country of birth (Eurostat migr_pop3ctb) and
+# tertiary shares by country of birth (edat_lfs_9915); G = 20% of output.
+# College premium: Structure of Earnings Survey 2022 (Eurostat earn_ses22_30, mean
+# annual gross earnings, and earn_ses22_04, employees), EU27, enterprises with 10
+# or more employees, NACE B–S except O, by ISCED 2011 level; the non-college value
+# is the employee-weighted mean of levels 0–2 and 3–4 (data/eurostat/README.md).
+POP_25_64 = 238_238_721
+FOREIGN_25_64 = 42_027_781
+SES22_EARNINGS = {"ED0-2": 27_165, "ED3_4": 34_282, "ED5-8": 50_948}        # EUR per year
+SES22_EMPLOYEES = {"ED0-2": 21_567_667, "ED3_4": 60_849_551, "ED5-8": 43_914_560}
+_noncollege_earnings = (
+    (SES22_EMPLOYEES["ED0-2"] * SES22_EARNINGS["ED0-2"]
+     + SES22_EMPLOYEES["ED3_4"] * SES22_EARNINGS["ED3_4"])
+    / (SES22_EMPLOYEES["ED0-2"] + SES22_EMPLOYEES["ED3_4"])
+)
+TARGETS_BASE = Targets(
+    foreign_share=FOREIGN_25_64 / POP_25_64,
+    tertiary_native=0.368,
+    tertiary_foreign=0.329,
+    skill_premium=SES22_EARNINGS["ED5-8"] / _noncollege_earnings,
+    g_share=0.20,
+)
+# EU-born variant (MIG_EU_BORN=1): immigrants are the residents born in another EU
+# country. Immigrant share = EU-born residents 25–64 over all residents 25–64 (migr_pop3ctb
+# EU27_2020_FOR, EU27_2020, 1 Jan 2024; the non-EU-born count among the stayers);
+# tertiary share of the EU-born 0.348 (edat_lfs_9915, EU27_2020_FOR, 2024, release of
+# 2026-09-10); natives' tertiary share unchanged (data/eurostat/eu_born/README.md).
+EU_BORN = os.environ.get("MIG_EU_BORN", "0") == "1"
+EU_BORN_25_64 = 10_919_080
+if EU_BORN:
+    TARGETS = dataclasses.replace(TARGETS_BASE, foreign_share=EU_BORN_25_64 / POP_25_64,
+                                  tertiary_foreign=0.348)
+else:
+    TARGETS = TARGETS_BASE
+
 # --- Preferences & technology
-# σ: stay/leave margin (home vs. best offer abroad); θ: choice among foreign
-# destinations (θ ≥ σ; θ = inf is the perfect-substitutes limit). θ enters only the
-# small-country (differentiated-destinations) solver. Values from Appendix C.1
-# (app:shape-parameters): θ = 3.202, the Danish elasticity of foreigners in their
-# first three years, 2.049 (Kleven et al. 2014, Table II, A1, col. 3), divided by
-# 1 + the earnings elasticity (1 − 0.36); σ = 1.323, the logit coefficient α of
-# Kleven, Landais, Saez (2013, Table 2, panel A, col. 1).
-σ = _env_param("MIG_SIGMA", 1.323)
-θ = float("inf") if os.environ.get("MIG_THETA", "").lower() == "inf" else _env_param("MIG_THETA", 3.202)
-assert θ >= σ, f"θ = {θ} < σ = {σ}: the nested taste-shock distribution requires θ ≥ σ"
 γ = _env_param("MIG_GAMMA", 0)
 ρ = _env_param("MIG_RHO", 3)
 ϵ = _env_param("MIG_EPS", 7)
-φ = _env_param("MIG_PHI", 0.72)   # within-skill immigrant/native wage ratio of about 0.9
+# φ: relative productivity of immigrants. Baseline 0.72 at ε = 7: immigrants earn
+# 0.89 (low skill) and 0.91 (high skill) of the native wage, 0.90 on average. In a
+# specification with another ε, φ is recalibrated so that the mean immigrant/native
+# wage ratio at the targeted allocation is the same as at the baseline (closed form,
+# model/calibration.py). MIG_PHI overrides it.
+PHI_BASE, EPS_BASE = 0.72, 7
+# (the target is the wage ratio at the baseline targets, also in the EU-born variant)
+WAGE_RATIO_TARGET = immigrant_wage_ratio(TARGETS_BASE.allocation()[0], EPS_BASE, PHI_BASE)
+if os.environ.get("MIG_PHI") is not None:
+    φ = _env_param("MIG_PHI", PHI_BASE)
+elif ϵ == EPS_BASE and not EU_BORN:
+    φ = PHI_BASE
+else:
+    φ = round(phi_for_wage_ratio(TARGETS.allocation()[0], ϵ, WAGE_RATIO_TARGET), 3)
+
+# σ: stay/leave margin (home vs. best offer abroad); θ: choice among foreign
+# destinations (θ ≥ σ; θ = inf is the perfect-substitutes limit). θ enters only the
+# small-country (differentiated-destinations) solver. Both are calibrated so that the
+# model reproduces two estimates (app:shape-parameters; analysis/calibrate_shape.py):
+# θ, the arc elasticity of high-skill immigrants over the policy cut equals 2.392
+# (Kleven et al. 2014, Table II, A4, col. 3, controlling for imperfect take-up);
+# σ, the pooled native logit coefficient with wages adjusting equals 1.323 (Kleven,
+# Landais, Saez 2013, Table 2, panel A, col. 1). Calibrated values are stored by
+# specification (ε, γ, ρ, φ) in model/shape_params.json; a specification without an
+# entry uses the baseline entry, except the EU-born variant. MIG_SIGMA / MIG_THETA override them.
+_SHAPE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "shape_params.json")
+SHAPE_KEY = (f"eps={float(ϵ):g},gamma={float(γ):g},rho={float(ρ):g},phi={float(φ):g}"
+             + (",targets=eu_born" if EU_BORN else ""))
+_SHAPE_BASE_KEY = "eps=7,gamma=0,rho=3,phi=0.72"
+
+
+def _shape_default(name):
+    import json
+    try:
+        with open(_SHAPE_FILE, encoding="utf-8") as f:
+            params = json.load(f)
+    except FileNotFoundError:
+        return None
+    # the EU-born variant has no fallback: its σ, θ must be calibrated to its own targets
+    entry = (params.get(SHAPE_KEY) if EU_BORN
+             else params.get(SHAPE_KEY, params.get(_SHAPE_BASE_KEY)))
+    return None if entry is None else entry[name]
+
+
+σ = _env_param("MIG_SIGMA", _shape_default("sigma"))
+θ = (float("inf") if os.environ.get("MIG_THETA", "").lower() == "inf"
+     else _env_param("MIG_THETA", _shape_default("theta")))
+assert σ is not None and θ is not None, \
+    f"no calibrated σ, θ in {_SHAPE_FILE}: run analysis.calibrate_shape or set MIG_SIGMA / MIG_THETA"
+assert θ >= σ, f"θ = {θ} < σ = {σ}: the nested taste-shock distribution requires θ ≥ σ"
 
 # output-filename tags: θ-independent outputs carry σ only
 SIG_TAG = f"sig_{_fmt(σ)}"
@@ -49,7 +125,12 @@ L0, L1 = 1.0, 1.0
 
 
 # --- Tax Progressivity parameter
-τl = 0.216
+# Average progressivity of the estimated tax functions of married couples in 17 OECD
+# countries, Holter, Krueger and Stepanchuk ("Until the IRS Do Us Part", 2023, p. 13);
+# the net income they fit deducts income tax and employee social security contributions
+# and adds benefits (their Appendix A.7.1). The calibrated σ, θ in model/shape_params.json
+# are for this value.
+τl = 0.218
 
 # --- Capital tax
 tau_k = 0.18
@@ -78,30 +159,6 @@ tau10h_vals = np.linspace(0, 0.5, 25)
 # --- Initial conditions
 x0  = np.array([0.4, 0.2, 0.24, 0.1, 0.1])
 bnds = bounds_lambda + ((1e-5, 10),)
-
-# --- Calibration targets (app:data, app:calibration)
-# EU 2024, ages 25–64: population by country of birth (Eurostat migr_pop3ctb) and
-# tertiary shares by country of birth (edat_lfs_9915); G = 20% of output.
-# College premium: Structure of Earnings Survey 2022 (Eurostat earn_ses22_30, mean
-# annual gross earnings, and earn_ses22_04, employees), EU27, enterprises with 10
-# or more employees, NACE B–S except O, by ISCED 2011 level; the non-college value
-# is the employee-weighted mean of levels 0–2 and 3–4 (data/eurostat/README.md).
-POP_25_64 = 238_238_721
-FOREIGN_25_64 = 42_027_781
-SES22_EARNINGS = {"ED0-2": 27_165, "ED3_4": 34_282, "ED5-8": 50_948}        # EUR per year
-SES22_EMPLOYEES = {"ED0-2": 21_567_667, "ED3_4": 60_849_551, "ED5-8": 43_914_560}
-_noncollege_earnings = (
-    (SES22_EMPLOYEES["ED0-2"] * SES22_EARNINGS["ED0-2"]
-     + SES22_EMPLOYEES["ED3_4"] * SES22_EARNINGS["ED3_4"])
-    / (SES22_EMPLOYEES["ED0-2"] + SES22_EMPLOYEES["ED3_4"])
-)
-TARGETS = Targets(
-    foreign_share=FOREIGN_25_64 / POP_25_64,
-    tertiary_native=0.368,
-    tertiary_foreign=0.329,
-    skill_premium=SES22_EARNINGS["ED5-8"] / _noncollege_earnings,
-    g_share=0.20,
-)
 
 # --- Land endowments by skill (app:land): ℓ^h/ℓ^l equals the skill premium target
 if os.environ.get("MIG_LEGACY_CALIB", "0") == "1":

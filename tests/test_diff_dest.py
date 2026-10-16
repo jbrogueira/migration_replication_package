@@ -6,12 +6,12 @@ import os
 import numpy as np
 import pytest
 
-from config import σ, θ, pref_tax, G0, SIG_TAG, DD_TAG
+from config import σ, θ, pref_tax, G0, SIG_TAG, DD_TAG, τl
 from model.equilibrium import pi_ge_eq, err_ge_eq, p_foreign, λ_star, τ1
 from model.equations import Pi
 from model import equilibrium_diff_dest as dd
 
-TWO_COUNTRY_CSV = f"output/tables/csv/two_country_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_0.216_equilibrium.csv"
+TWO_COUNTRY_CSV = f"output/tables/csv/two_country_pref_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}_equilibrium.csv"
 
 
 @pytest.fixture(scope="session")
@@ -95,14 +95,14 @@ def test_taul_adjustment_budget_clearing():
     row = dd.equilibrium_row(p0, λ_star, τ_override=τ0)
     assert abs(row["TR"] - G0) < 1e-8
     # revenue lost to the preferential rate is recovered by raising progressivity
-    assert tau_l_star > 0.216
+    assert tau_l_star > τl
 
 
 # --- Gate 4: foreign CEV analytic, mirroring guard ---
 def test_needs_policy_mirroring_guard():
     from analysis.build_equilibrium_tables import _needs_policy_mirroring
-    assert _needs_policy_mirroring(f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_0.216") is False
-    assert _needs_policy_mirroring(f"soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_0.216") is True
+    assert _needs_policy_mirroring(f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_{τl}") is False
+    assert _needs_policy_mirroring(f"soe_pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}") is True
 
 
 def test_foreign_cev_analytic_zero(policy_slsqp, tmp_path, monkeypatch):
@@ -113,8 +113,8 @@ def test_foreign_cev_analytic_zero(policy_slsqp, tmp_path, monkeypatch):
     # exact B and P rows written to a temporary directory
     row_b = dd.equilibrium_row(pi_ge_eq[:4], pi_ge_eq[4])
     row_p = dd.equilibrium_row(policy_slsqp[:4], policy_slsqp[4], τ10h_fixed=τP)
-    b_path = tmp_path / f"diff_dest_baseline_{DD_TAG}_taul_0.216_equilibrium.csv"
-    p_path = tmp_path / f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_0.216_equilibrium.csv"
+    b_path = tmp_path / f"diff_dest_baseline_{DD_TAG}_taul_{τl}_equilibrium.csv"
+    p_path = tmp_path / f"diff_dest_pref_tax_{int(pref_tax*100)}_{DD_TAG}_taul_{τl}_equilibrium.csv"
     pd.DataFrame([row_b]).to_csv(b_path, index=False)
     pd.DataFrame([row_p]).to_csv(p_path, index=False)
 
@@ -147,7 +147,11 @@ def test_signs_match_two_country_pe(policy_slsqp):
     tc = pd.read_csv(TWO_COUNTRY_CSV).iloc[0]
     resp_dd = policy_slsqp[:4] - pi_ge_eq[:4]
     resp_tc = np.array([tc["p00l"], tc["p10l"], tc["p00h"], tc["p10h"]]) - pi_ge_eq[:4]
-    # compare signs only where both responses are away from zero
-    mask = (np.abs(resp_dd) > 1e-4) & (np.abs(resp_tc) > 1e-4)
+    # high-skill stocks only (natives leave, immigrants arrive in both economies); the
+    # low-skill responses differ in sign at the calibrated θ, where low-skill natives
+    # gain in the small country and lose in the two-country economy. Compare signs
+    # only where both responses are away from zero.
+    high = np.array([False, False, True, True])
+    mask = high & (np.abs(resp_dd) > 1e-4) & (np.abs(resp_tc) > 1e-4)
     assert mask.any()
     assert np.all(np.sign(resp_dd[mask]) == np.sign(resp_tc[mask]))

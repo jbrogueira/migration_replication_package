@@ -39,7 +39,7 @@ SEQ_BLUES_5 = ["#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c"]
 
 TP = 0.13
 RUN = {"dir": HERE, "prefix": None, "tau_h": 0.24, "tau_l": 0.18, "hom_dir": None,
-       "hom_prefix": None}
+       "hom_prefix": None, "cev_exact": False}
 T_SHOW = 199  # slot 200 is the pinned terminal slice
 
 
@@ -220,13 +220,15 @@ def fig5_wedges(d: Data) -> None:
 
 def fig6_welfare(d: Data) -> None:
     cev = d.cev
+    # --cev-exact: exact percent 100*(exp(x/100) - 1) of the log-point CEV x
+    tr = (lambda x: 100 * np.expm1(np.asarray(x) / 100)) if RUN["cev_exact"] else (lambda x: x)
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
     tt = np.arange(1, T_SHOW + 1)
     ax = axes[0]
     for b in BLOC:
-        ax.plot(tt, getattr(cev, f"cev_{b}_h_pref_16")[:T_SHOW], color=BLOC[b],
+        ax.plot(tt, tr(getattr(cev, f"cev_{b}_h_pref_16")[:T_SHOW]), color=BLOC[b],
                 linewidth=1.8, label=f"{BLOC_NAME[b]}, employed")
-    ax.plot(tt, getattr(cev, "cev_eu15_h_pref_33")[:T_SHOW], color=BLOC["eu15"],
+    ax.plot(tt, tr(getattr(cev, "cev_eu15_h_pref_33")[:T_SHOW]), color=BLOC["eu15"],
             linewidth=1.4, linestyle="--", label="EU-15, non-employed")
     ax.axhline(0, color=BASE_GRAY, linewidth=0.8)
     ax.set_title("CEV: preferential high-skill")
@@ -235,9 +237,9 @@ def fig6_welfare(d: Data) -> None:
 
     ax = axes[1]
     for b in BLOC:
-        ax.plot(tt, getattr(cev, f"cev_{b}_h_std_16")[:T_SHOW], color=BLOC[b],
+        ax.plot(tt, tr(getattr(cev, f"cev_{b}_h_std_16")[:T_SHOW]), color=BLOC[b],
                 linewidth=1.8, label=f"{BLOC_NAME[b]}, standard high-skill")
-    ax.plot(tt, getattr(cev, "cev_eu15_l_16")[:T_SHOW], color=BASE_GRAY,
+    ax.plot(tt, tr(getattr(cev, "cev_eu15_l_16")[:T_SHOW]), color=BASE_GRAY,
             linewidth=1.4, linestyle="--", label="EU-15, low-skill")
     ax.axhline(0, color=BASE_GRAY, linewidth=0.8)
     ax.set_title("CEV: standard-schedule and low-skill")
@@ -272,10 +274,12 @@ def main() -> None:
     ap.add_argument("--taup", type=float, default=0.13)
     ap.add_argument("--hom-dir", default=None)
     ap.add_argument("--hom-prefix", default=None)
+    ap.add_argument("--cev-exact", action="store_true")
     a = ap.parse_args()
     TP = a.taup
     RUN.update(dir=Path(a.dir), prefix=a.prefix, tau_h=a.tau_h, tau_l=a.tau_l,
-               hom_dir=Path(a.hom_dir) if a.hom_dir else None, hom_prefix=a.hom_prefix)
+               hom_dir=Path(a.hom_dir) if a.hom_dir else None, hom_prefix=a.hom_prefix,
+               cev_exact=a.cev_exact)
     OUT = Path(a.out)
     OUT.mkdir(exist_ok=True)
     d = load_all()

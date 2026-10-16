@@ -282,19 +282,22 @@ def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
     Parameters:
     - dfs_pref: dict {label: sweep with the preferential tax ('λ0','TR' columns)},
       in the order to be drawn
-    - df_base: sweep without the preferential tax
+    - df_base: sweep without the preferential tax, or a dict with the same keys as
+      dfs_pref holding the sweep without the preferential tax at each θ (drawn dashed
+      in the colour of the matching preferential-tax curve)
     - star_tau: 1 - λ* at the calibrated baseline
     - G0: government expenditure (horizontal line)
     """
     plt.figure(figsize=(8,5))
 
-    plt.plot(
-        1 - df_base['λ0'], df_base['TR'],
-        linestyle='-', color='0.35', linewidth=1.5,
-        marker='o', markersize=6, markevery=(0, 12),
-        markerfacecolor='white', markeredgecolor='0.35',
-        label="No preferential tax"
-    )
+    if not isinstance(df_base, dict):
+        plt.plot(
+            1 - df_base['λ0'], df_base['TR'],
+            linestyle='-', color='0.35', linewidth=1.5,
+            marker='o', markersize=6, markevery=(0, 12),
+            markerfacecolor='white', markeredgecolor='0.35',
+            label="No preferential tax"
+        )
 
     styles = [('#0072B2', 's'), ('#D55E00', '^'), ('#CC79A7', 'D'),
               ('#006400', 'v'), ('#56B4E9', 'P')]
@@ -307,6 +310,13 @@ def plot_theta_laffer(dfs_pref, df_base, star_tau, G0, filename=None):
             markerfacecolor='white', markeredgecolor=col,
             label=lab
         )
+        if isinstance(df_base, dict) and lab in df_base:
+            plt.plot(1 - df_base[lab]['λ0'], df_base[lab]['TR'],
+                     linestyle='--', color=col, linewidth=1.2)
+
+    if isinstance(df_base, dict):
+        plt.plot([], [], linestyle='--', color='0.35', linewidth=1.2,
+                 label="No preferential tax, same $\\theta$")
 
     plt.axvline(
         x=star_tau, linestyle='--', linewidth=1.2,

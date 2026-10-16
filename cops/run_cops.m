@@ -1,13 +1,11 @@
 function run_cops(cc)
-%% Rerun of the canonical exercise at the baseline average rates of the static
-%% calibration sigma = 1.323, theta = 3.202, rho = 3, phi = 0.72 (2026-10-11):
-%% native high-skill 0.2436, native low-skill 0.1668
-%% (baseline_sig_1p323_taul_0.216 equilibrium). Previous rerun (recalib_v5):
-%% 0.2372 / 0.1598; engine defaults 0.24 / 0.18. All other
-%% settings as R4/R5: indexed baseline schedule, closed budget at the target
-%% country, k_temp_pref = 10, tau_P homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13 -> 0.114.
+%% Transition at the baseline average rates of the static calibration with tax
+%% progressivity tau = 0.218, sigma = 1.275, theta = 3.675, rho = 3, phi = 0.72:
+%% native high-skill 0.2440, native low-skill 0.1664 (baseline_sig_1p275_taul_0.218
+%% equilibrium). Indexed baseline schedule, closed budget at the target country,
+%% k_temp_pref = 10, tau_P homotopy 0.2127 -> 0.19 -> 0.16 -> 0.13 -> 0.114.
 %% The paper's rate 0.114 is half the baseline average rate of high-skill
-%% immigrants in the static model (0.2284).
+%% immigrants in the static model.
 %% cc = 'pt' (16), 'es' (8) or 'de' (5).
 %%
 %% Run from cops/runs (outputs and diagnostic folders land there):
@@ -22,12 +20,13 @@ function run_cops(cc)
       case 'pt'; ic = 16;
       case 'es'; ic = 8;
       case 'de'; ic = 5;
-      otherwise; error('v6:ctry', 'unknown country tag %s (use pt|es|de)', cc);
+      otherwise; error('v8:ctry', 'unknown country tag %s (use pt|es|de)', cc);
   end
   %% read by sweep_engine in every solve and in the stock dumps
-  setenv('TAU_H_BASE', '0.2436');
-  setenv('TAU_L_BASE', '0.1668');
-  pfx = sprintf('v6_%s', cc);
+  setenv('TAU_H_BASE', '0.2440');
+  setenv('TAU_L_BASE', '0.1664');
+  setenv('TAU_PROG', '0.218');
+  pfx = sprintf('v8_%s', cc);
   tracks = {'V_eu15_h','V_nms8_h','V_oth_h','V_eu15_l','V_nms8_l','V_oth_l', ...
             'V_eu15_h_std','V_nms8_h_std','V_oth_h_std', ...
             'V_eu15_h_pref','V_nms8_h_pref','V_oth_h_pref'};
@@ -57,7 +56,7 @@ function run_cops(cc)
   devS = max(abs([Stz.h_ratio(2:end-1), Stz.l_ratio(2:end-1)] - 1));
   printf('%s zero-policy stock check: max|ratio-1|=%.3e\n', pfx, devS); fflush(stdout);
   if devL > 1e-3 || devV > 1e-3 || devS > 1e-3
-      error('v6:gate', 'zero-policy gate FAIL at %s: lambda %.3e, V %.3e, stocks %.3e', cc, devL, devV, devS);
+      error('v8:gate', 'zero-policy gate FAIL at %s: lambda %.3e, V %.3e, stocks %.3e', cc, devL, devV, devS);
   end
 
   %% ---- open-budget solve at 0.2127 (R1 protocol) ----
@@ -92,7 +91,7 @@ function run_cops(cc)
       fname = sprintf('%s_taup_%s.mat', pfx, tag);
       save('-v7', fname, 'Vcur', 'info');
       if info.F_final > np.tol_F
-          error('v6:conv', '%s tau_P=%.4f not converged: |F|=%.3e', pfx, tp, info.F_final);
+          error('v8:conv', '%s tau_P=%.4f not converged: |F|=%.3e', pfx, tp, info.F_final);
       end
       dg = info.dg;
       printf('lambda in [%.4f, %.4f]  max|budget resid|=%.2e\n', ...

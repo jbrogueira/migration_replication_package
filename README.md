@@ -16,11 +16,14 @@ migration_replication_package/
 │   ├── run_temporary_tax.py   # Temporary preferential tax (appendix)
 │   ├── run_g_per_capita.py    # Government spending proportional to the population, in full or in its rival share (appendix)
 │   ├── run_sigma_theta_grid.py  # Sensitivity to sigma and theta
+│   ├── calibrate_shape.py, shape_moments.py  # Calibration of sigma and theta (appendix)
 │   ├── build_equilibrium_tables.py, exact_refine.py, run_variant.py
 ├── model/                     # Calibration, equations, equilibrium solvers
+│   └── shape_params.json      # Calibrated sigma and theta, by specification
 ├── viz/                       # Plotting
 ├── tests/                     # pytest checks of the calibration and the solvers
 ├── data/eurostat/             # Eurostat extracts used for the calibration targets
+│   └── eu_born/               # Extracts for the calibration with EU-born immigrants (appendix)
 ├── config.py                  # Parameters and calibration targets
 ├── run_all.py                 # Main experiments at the baseline calibration
 ├── run_paper.py               # Every table and figure of the static model
@@ -28,7 +31,7 @@ migration_replication_package/
 ├── environment.yml, requirements.txt
 ```
 
-Baseline calibration (`config.py`): sigma = 1.323, theta = 3.202, rho = 3, epsilon = 7, phi = 0.72, tax progressivity 0.216, preferential rate 0.114. The remaining parameters (S, kappa, lambda, G) are calibrated in `model/calibration.py` to the data targets. The parameters sigma, theta, epsilon, gamma, rho and phi can be overridden with the environment variables `MIG_SIGMA`, `MIG_THETA`, `MIG_EPS`, `MIG_GAMMA`, `MIG_RHO` and `MIG_PHI`.
+Baseline calibration (`config.py`): rho = 3, epsilon = 7, phi = 0.72, tax progressivity 0.218, preferential rate 0.114, sigma = 1.275 and theta = 3.675. The parameters sigma and theta are calibrated so that the model reproduces the pooled native logit coefficient of Kleven, Landais and Saez (2013), 1.323, and the elasticity of high-skill immigrants of Kleven et al. (2014), 2.392 (`analysis/calibrate_shape.py`); the calibrated values are stored by specification in `model/shape_params.json`, which `config.py` reads. With epsilon different from 7, phi is recalibrated to the same immigrant/native wage ratio. The remaining parameters (S, kappa, lambda, G) are calibrated in `model/calibration.py` to the data targets. The parameters sigma, theta, epsilon, gamma, rho and phi can be overridden with the environment variables `MIG_SIGMA`, `MIG_THETA`, `MIG_EPS`, `MIG_GAMMA`, `MIG_RHO` and `MIG_PHI`; `MIG_EU_BORN=1` sets the calibration targets with immigrants defined as the residents born in another EU country.
 
 > All tables (CSV and LaTeX) and figures are written to a new `output/` folder.
 
@@ -70,10 +73,10 @@ This runs:
 
 - `run_all.py` at the baseline calibration: the multilateral and unilateral Laffer curves, the small country with differentiated destinations and in the perfect-substitutes limit, the large country, multilateral adoption, the progressivity variant, government spending proportional to the population, in full and in its rival share 0.62 (`analysis.run_g_per_capita`, `--share`), and the theta sweep (`output/tables/`, `output/figures/`);
 - the temporary preferential tax (`analysis.run_temporary_tax`);
-- the variants sigma = theta = 2, epsilon = 20 and land (gamma = 0.05), each in a temporary copy of the package, collected in `output/variants/{sig2,eps20,gamma005}/`;
+- the variants sigma = theta = 2, epsilon = 20, land (gamma = 0.05) and EU-born immigrants (`MIG_EU_BORN=1`), each in a temporary copy of the package, collected in `output/variants/{sig2,eps20,gamma005,eu_born}/`; in the epsilon = 20 variant the theta sweep solves the perfect-substitutes limit on the decreasing side of the Laffer curve, where the budget clears (`solve_high_tax_branch_ps` in `analysis/run_theta_sweep.py`);
 - the sensitivity to sigma and theta (`analysis.run_sigma_theta_grid`), in `output/variants/sigma_theta_grid/`.
 
-The dynamic exercise in the appendix, based on the model of Caliendo, Opromolla, Parro and Sforza (2021), is in `cops/` (Octave or MATLAB); `cops/README.md` lists the files to take from their replication package and the steps to run it. The full run takes a few minutes. Output file names carry the values of sigma and theta (for example `sig_1p323_theta_3p202`). Every reported equilibrium satisfies the government budget constraint to numerical precision.
+The dynamic exercise in the appendix, based on the model of Caliendo, Opromolla, Parro and Sforza (2021), is in `cops/` (Octave or MATLAB); `cops/README.md` lists the files to take from their replication package and the steps to run it. The full run of `run_paper.py` takes about 6.5 minutes on an Apple M2 laptop. Output file names carry the values of sigma and theta (for example `sig_1p275_theta_3p675`). Every reported equilibrium satisfies the government budget constraint to numerical precision.
 
 To run only the main experiments:
 
@@ -81,10 +84,19 @@ To run only the main experiments:
 python run_all.py
 ```
 
-To run the tests:
+To run the tests (a few seconds; one test reads an output of `run_all.py` and is skipped without it):
 
 ```bash
 python -m pytest -q
+```
+
+The calibrated sigma and theta are stored in `model/shape_params.json`, so the steps above do not recompute them. To recompute them for a specification:
+
+```bash
+python -m analysis.calibrate_shape                  # baseline
+MIG_EPS=20 python -m analysis.calibrate_shape       # epsilon = 20
+MIG_GAMMA=0.05 python -m analysis.calibrate_shape   # land
+MIG_EU_BORN=1 python -m analysis.calibrate_shape    # EU-born immigrants
 ```
 
 ## How to cite

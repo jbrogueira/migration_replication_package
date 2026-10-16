@@ -232,6 +232,10 @@ thb_env = getenv('TAU_H_BASE');
 if isempty(thb_env); tau_h_base_override = []; else; tau_h_base_override = str2double(thb_env); end
 tlb_env = getenv('TAU_L_BASE');
 if isempty(tlb_env); tau_l_base_override = []; else; tau_l_base_override = str2double(tlb_env); end
+%% TAU_PROG: override the progressivity of the HSV schedule (default 0.216).
+%% Unset = engine default bit-for-bit.
+tpg_env = getenv('TAU_PROG');
+if isempty(tpg_env); tau_prog_override = []; else; tau_prog_override = str2double(tpg_env); end
 Ymax = 1;
 iter = 1;
 
@@ -1010,6 +1014,7 @@ while (iter <= outer_max_iter) && (Ymax > toldyn)
     if ~isempty(tau_l_base_override); tau_l_base = tau_l_base_override; end
     if isempty(tau_P_pref_override); tau_P_pref = 0.235; else; tau_P_pref = tau_P_pref_override; end  % 0.235=0.5pp cut; TAU_P_PREF env override (neutral audit: set =tau_h_base)
     tau_progressivity = 0.216;  % paper Table 1: Bénabou-HSV progressivity (Holter et al.)
+    if ~isempty(tau_prog_override); tau_progressivity = tau_prog_override; end
     rho_c      = VALL0(i) / VALS0(i);          % ~3.93 at PT (slot-1 dollar wage bill ratio)
     L_h_base_c = L0_eu15_h(i) + L0_nms8_h(i) + L0_oth_h(i);
     L_l_base_c = L0_eu15_l(i) + L0_nms8_l(i) + L0_oth_l(i);

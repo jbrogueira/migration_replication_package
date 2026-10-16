@@ -1,15 +1,17 @@
 """Endpoint and welfare summary of a closed-budget preferential-tax run (default tau_P = 0.13),
 for the appendix tables tab:cops-transition and tab:cops-cev.
 
-Usage: python summarize_cops_run.py --dir recalib_v6 --prefix v6 [--taup 0.13]
+Usage: python summarize_cops_run.py --dir recalib_v6 --prefix v6 [--taup 0.13] [--cev-exact]
 reads {prefix}_{cc}_taup_0p13.mat, pt_stocks_{prefix}_{cc}_0p13.mat and
 cev_paths_{prefix}_{cc}_taup13.mat for cc in pt, es, de (tags follow --taup:
 0.114 -> 0p114, taup114). End of the transition = slot 199
 (index 198; slot 200 is the pinned terminal slice); announcement = slot 2 (index 1).
-CEV rows: employed workers of the adopting country (row = country index).
+CEV rows: employed workers of the adopting country (row = country index), in log points;
+--cev-exact prints the exact percent 100*(exp(x/100) - 1) of the log-point CEV x.
 """
 import argparse
 from pathlib import Path
+import numpy as np
 import scipy.io
 
 CTRY = {"pt": 16, "es": 8, "de": 5}
@@ -46,13 +48,15 @@ def main():
     ap.add_argument("--dir", required=True)
     ap.add_argument("--prefix", required=True)
     ap.add_argument("--taup", type=float, default=0.13)
+    ap.add_argument("--cev-exact", action="store_true")
     a = ap.parse_args()
     d = Path(__file__).parent / a.dir
     out = {cc: summary(d, a.prefix, cc, a.taup) for cc in CTRY}
     for k in ("h_stock", "pool", "l_stock", "w_h", "w_l", "tau_h0", "tau_h1", "lam_dev", "budget_resid"):
         print(f"{k:13s}" + "".join(f"{out[cc][k]:>12.4g}" for cc in CTRY))
+    tr = (lambda x: 100 * np.expm1(x / 100)) if a.cev_exact else (lambda x: x)
     for k in ("pref_eu15", "pref_nms8", "pref_oth", "std_eu15", "low_eu15"):
-        print(f"{k:13s}" + "".join(f"{out[cc][k][0]:>8.3f} {out[cc][k][1]:>7.3f}" for cc in CTRY))
+        print(f"{k:13s}" + "".join(f"{tr(out[cc][k][0]):>8.3f} {tr(out[cc][k][1]):>7.3f}" for cc in CTRY))
 
 
 if __name__ == "__main__":

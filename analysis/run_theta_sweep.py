@@ -16,7 +16,7 @@ from model.equilibrium_diff_dest import (
 )
 from analysis.run_diff_dest import _native_cev
 from viz.plotting import plot_theta_laffer
-from config import σ, θ as θ_base, λ0_vals, pref_tax, G0, τl, SIG_TAG
+from config import σ, θ as θ_base, λ0_vals, pref_tax, G0, τl, SIG_TAG, g_rival_share
 
 CSV_DIR = "output/tables/csv"
 TEX_DIR = "output/tables/tex"
@@ -38,23 +38,77 @@ def _row(x, θ, row_b) -> dict:
             "cev00l": cev['l'], "cev10l": 0.0, "cev00h": cev['h'], "cev10h": 0.0}
 
 
-def solve_theta_path(thetas, row_b):
+def solve_high_tax_branch_ps(pref_tax=pref_tax, n_grid=2000):
+    """
+    Perfect-substitutes limit (θ = inf), constant spending: the budget-clearing tax level
+    on the decreasing side of the Laffer curve. Continuation in λ0 from λ* towards high
+    tax levels, solving the allocation at each λ0; the first sign change of revenue − G0
+    after revenue has exceeded G0 is refined by brentq. Returns [p00l, p10l, p00h, p10h, λ0]
+    or None if revenue never falls back to G0 on the solvable range.
+    """
+    from model.equilibrium import err_ge_pref_tax
+    from model.equations import wage, taul
+
+    def alloc(lam, x):
+        f = lambda v: err_ge_pref_tax(v, out=0, custom_λ0=lam, custom_τ10h=pref_tax)
+        r = optimize.root(f, x, method='hybr', tol=1e-14)
+        ok = np.max(np.abs(f(r.x))) < 1e-10 and np.all(r.x > 0)
+        return r.x, ok
+
+    def gap(lam, x):
+        w = [wage(0, 0, 'l', x), wage(1, 0, 'l', x), wage(0, 0, 'h', x), wage(1, 0, 'h', x)]
+        t = [taul(w[0], lam), taul(w[1], lam), taul(w[2], lam), pref_tax]
+        return sum(x[k] * t[k] * w[k] for k in range(4)) - G0
+
+    x, prev = pi_ge_eq[:4].copy(), None
+    for lam in np.linspace(λ_star, 0.02, n_grid):
+        xn, ok = alloc(lam, x)
+        if not ok:
+            break
+        g = gap(lam, xn)
+        if prev is not None and prev[2] > 0 and g <= 0:
+            warm = {"x": prev[1]}
+
+            def _g(l):
+                warm["x"], ok_ = alloc(l, warm["x"])
+                assert ok_
+                return gap(l, warm["x"])
+
+            lam_c = optimize.brentq(_g, lam, prev[0], xtol=1e-14)
+            xs = np.concatenate([warm["x"], [lam_c]])
+            res = np.max(np.abs(err_diff_dest(xs, out=0, custom_τ10h=pref_tax, θ=np.inf)))
+            assert res < 1e-10, f"high-tax branch residual {res:.1e}"
+            return xs
+        prev, x = (lam, xn, g), xn
+    return None
+
+
+def solve_theta_path(thetas, row_b, g_per_capita=False):
     """
     Budget-clearing equilibria along θ, warm-started (continuation). A θ with no
     budget-clearing solve is recorded with solved = False (e.g. at high ϵ in the
     perfect-substitutes limit the immigrant stock diverges before revenue falls to G0).
+    In the perfect-substitutes limit with constant spending, such a θ is then solved on
+    the decreasing side of the Laffer curve (branch = "high"); every other row is the
+    budget-clearing equilibrium at the lowest tax level (branch = "low").
     """
     rows, sols, x = [], {}, None
     for θ in thetas:
         try:
-            x = solve_diff_dest(pref_tax, x0_init=x, θ=θ)
+            x = solve_diff_dest(pref_tax, x0_init=x, θ=θ, g_per_capita=g_per_capita)
         except AssertionError as e:
             print(f"DIAGNOSTIC FLAG: no budget-clearing equilibrium found at θ = {θ}: {e}")
-            rows.append({"theta": θ, "solved": False})
+            xh = (solve_high_tax_branch_ps() if np.isinf(θ) and not g_per_capita else None)
+            if xh is not None:
+                print(f"θ = {θ}: budget clears on the decreasing side of the Laffer curve, "
+                      f"1 - λ0 = {1 - xh[4]:.4f}")
+                rows.append({**_row(xh, θ, row_b), "solved": True, "branch": "high"})
+            else:
+                rows.append({"theta": θ, "solved": False})
             x = None
             continue
         sols[θ] = x
-        rows.append({**_row(x, θ, row_b), "solved": True})
+        rows.append({**_row(x, θ, row_b), "solved": True, "branch": "low"})
     return pd.DataFrame(rows), sols
 
 
@@ -123,6 +177,8 @@ def _tex_table(df: pd.DataFrame, θ_star, path: str):
     note = (f"The preferential tax clears the budget at the baseline tax level at $\\theta = {θ_star:.2f}$."
             if θ_star is not None else
             "The preferential tax does not clear the budget at the baseline tax level for any finite $\\theta$ on the grid.")
+    if "branch" in df and (df["branch"] == "high").any():
+        note = note[:-1] + "; in the perfect-substitutes limit the budget clears only on the decreasing side of the Laffer curve."
     lines += [
         fr"\caption{{Unilateral preferential tax ($\tau^P = {pref_tax}$) in the small country, "
         fr"for values of $\theta$ ($\sigma = {σ:g}$). B: baseline. {note}}}",
@@ -161,18 +217,34 @@ def main():
     _tex_table(df, θ_star, f"{TEX_DIR}/theta_sweep_{tag}.tex")
 
     # Laffer curves with the preferential tax for a subset of θ
-    df_base = sweep_diff_dest(λ0_vals, θ=θ_base if θ_base >= σ else σ)
-    dfs = {}
+    # each preferential-tax curve is drawn against the no-preferential-tax sweep at its own θ
+    dfs, dfs_base = {}, {}
     for θ in THETA_FIG:
         if θ < σ or θ not in sols:
             continue
         lab = (r"Preferential tax, $\theta = \infty$ (perfect substitutes)" if np.isinf(θ)
                else fr"Preferential tax, $\theta = {θ:g}$")
         dfs[lab] = sweep_diff_dest(λ0_vals, custom_τ10h=pref_tax, x0=sols[θ][:4], θ=θ)
-    plot_theta_laffer(dfs, df_base, tau_star, G0,
+        dfs_base[lab] = sweep_diff_dest(λ0_vals, θ=θ)
+    plot_theta_laffer(dfs, dfs_base, tau_star, G0,
                       filename=f"{FIG_DIR}/theta_laffer_{SIG_TAG}_taul_{τl}.png")
 
+    rival_sweep(row_b, tag)
     return df, θ_star
+
+
+def rival_sweep(row_b=None, tag=None):
+    """θ sweep with the rival share of spending proportional to the population
+    (ω = g_rival_share; app:g-rival): native CEVs at each θ, budget clearing."""
+    if row_b is None:
+        row_b = equilibrium_row(pi_ge_eq[:4], pi_ge_eq[4])
+    if tag is None:
+        tag = f"pref_tax_{int(pref_tax*100)}_{SIG_TAG}_taul_{τl}"
+    thetas = [θ for θ in THETA_GRID if θ >= σ]
+    df, _ = solve_theta_path(thetas, row_b, g_per_capita=g_rival_share)
+    om = str(g_rival_share).replace(".", "p")
+    df.to_csv(f"{CSV_DIR}/theta_sweep_grival_{om}_{tag}.csv", index=False)
+    return df
 
 
 if __name__ == "__main__":

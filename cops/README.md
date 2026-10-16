@@ -22,10 +22,11 @@ Requirements: GNU Octave (tested with 9.4) or MATLAB, and Python 3 with numpy, s
 | `summarize_cops_run.py` | Numbers of the two appendix tables |
 | `plot_transition.py` | Figures |
 
-The baseline average tax rates (0.2436 for high-skill and 0.1668 for low-skill workers) are
+The baseline average tax rates (0.2440 for high-skill and 0.1664 for low-skill workers) are
 the native rates of the static model at its baseline calibration (`baseline_*_equilibrium.csv`
-of `run_paper.py`); `run_cops.m` sets them. The preferential rate of the paper, 0.114, is half
-the baseline average rate of high-skill immigrants in the static model (0.2284); the
+of `run_paper.py`), and the progressivity of the tax schedule is 0.218, as in the static
+model; `run_cops.m` sets them. The preferential rate of the paper, 0.114, is half
+the baseline average rate of high-skill immigrants in the static model; the
 homotopy reaches it in steps from 0.2127.
 
 ## Steps
@@ -61,8 +62,8 @@ homotopy reaches it in steps from 0.2127.
 4. **Tables and figures.** From this folder:
 
    ```bash
-   python summarize_cops_run.py --dir runs --prefix v6 --taup 0.114
-   python plot_transition.py --dir runs --prefix v6_pt --taup 0.114 --tau-h 0.2436 --tau-l 0.1668 --out figures
+   python summarize_cops_run.py --dir runs --prefix v8 --taup 0.114 --cev-exact
+   python plot_transition.py --dir runs --prefix v8_pt --taup 0.114 --tau-h 0.2440 --tau-l 0.1664 --cev-exact --out figures
    ```
 
    The paper uses `figures/fig2_response_composition.png` (stocks),

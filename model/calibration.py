@@ -83,6 +83,17 @@ def symmetric_wages(p, S, rho, eps, phi, gamma=0.0):
     return np.array([w00l, w10l, w00h, w10h]), F, r
 
 
+def immigrant_wage_ratio(p, eps, phi):
+    """Mean over skills of the immigrant/native wage ratio, w_{10}^a/w_{00}^a =
+    φ (π_{10}^a/π_{00}^a)^{−1/ε} (it does not depend on S, ρ or γ)."""
+    return 0.5 * phi * ((p[1] / p[0])**(-1.0/eps) + (p[3] / p[2])**(-1.0/eps))
+
+
+def phi_for_wage_ratio(p, eps, ratio):
+    """φ at which the mean immigrant/native wage ratio equals `ratio`."""
+    return ratio / immigrant_wage_ratio(p, eps, 1.0)
+
+
 def skill_premium_S(p, premium, rho, eps, phi):
     """S such that S^{(ρ−1)/ρ}(N^l/N^h)^{1/ρ} equals the target premium."""
     Nl, Nh = _Nia(p[0], p[1], eps, phi), _Nia(p[2], p[3], eps, phi)

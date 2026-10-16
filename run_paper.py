@@ -2,13 +2,17 @@
 """
 Regenerate every numerical output in the paper.
 
-- Main run (σ=1.323, θ=3.202, ρ=3, φ=0.72, ε=7, γ=0): run_all.py, in place; includes the θ sweep
+- Main run (σ, θ calibrated in model/shape_params.json: 1.275, 3.675; ρ=3, φ=0.72, ε=7, γ=0):
+  run_all.py, in place; includes the θ sweep
   (app:theta, with θ* and the θ at which native CEV turns positive) and the
   perfect-substitutes (θ = inf) and large-country outputs.
 - Temporary tax (app:temporary-tax): analysis.run_temporary_tax, in place.
 - σ=2, θ=2 (appendix: independent shocks across destinations), ε=20
   (app:elasticity) and γ=0.05 (app:land): full run_all in a scratch copy of the
   package, collected under output/variants/{sig2,eps20,gamma005}/.
+- EU-born immigrants (MIG_EU_BORN=1: immigrant share and tertiary share of the EU-born;
+  φ, σ, θ recalibrated): full run_all in a scratch copy, collected under
+  output/variants/eu_born/.
 - σ × θ sensitivity at ρ = 3, φ = 0.72 (appendix tables tab:sigma_theta_grid,
   tab:sigma_summary): analysis.run_sigma_theta_grid, one scratch copy per σ,
   collected under output/variants/sigma_theta_grid/.
@@ -50,7 +54,7 @@ def _harvest(src_pkg: str, name: str):
 
 
 def main():
-    print("== main run (sigma=1.323, theta=3.202, eps=7, gamma=0) ==")
+    print("== main run (calibrated sigma, theta; eps=7, gamma=0) ==")
     _run({}, PKG)
 
     print("== temporary tax (app:temporary-tax) ==")
@@ -71,10 +75,15 @@ def main():
     _run({"MIG_GAMMA": "0.05"}, pkg)
     _harvest(pkg, "gamma005")
 
+    print("== EU-born immigrants variant (calibration targets) ==")
+    pkg = _scratch_copy()
+    _run({"MIG_EU_BORN": "1"}, pkg)
+    _harvest(pkg, "eu_born")
+
     print("== sigma x theta sensitivity (rho=3, phi=0.72) ==")
     _run({}, PKG, module="analysis.run_sigma_theta_grid")
 
-    print("done: output/, output/variants/{sig2,eps20,gamma005,sigma_theta_grid}/")
+    print("done: output/, output/variants/{sig2,eps20,gamma005,eu_born,sigma_theta_grid}/")
 
 
 if __name__ == "__main__":

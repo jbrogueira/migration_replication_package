@@ -16,6 +16,7 @@ output/variants/sigma_theta_grid/.
 
 Usage, from the package root:  python -m analysis.run_sigma_theta_grid
 """
+import json
 import os
 import re
 import shutil
@@ -28,10 +29,15 @@ import pandas as pd
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(PKG, "output", "variants", "sigma_theta_grid")
 
-SIGMAS = (1.04, 1.323, 1.8, 2.5)
-THETAS = (2.5, 3, 3.202, 3.7, 4.5)
+# baseline σ, θ: the calibrated values in model/shape_params.json (config.py defaults)
+with open(os.path.join(PKG, "model", "shape_params.json"), encoding="utf-8") as _f:
+    _BASE = json.load(_f)["eps=7,gamma=0,rho=3,phi=0.72"]
+SIGMA_BASE, THETA_BASE = _BASE["sigma"], _BASE["theta"]   # SIGMA_BASE's column carries the immigrant share
+SIGMAS = (1.04, SIGMA_BASE, 1.8, 2.5)
+# θ grid: the baseline, the bounds of its 95 percent confidence interval (3.07, 4.35;
+# app:shape-parameters), and θ = 2 to 4.5, the range implied by the Dutch estimates
+THETAS = (2, 2.5, 3, 3.07, THETA_BASE, 4.35, 4.5)
 RHO, PHI = 3, 0.72
-SIGMA_BASE = 1.323   # baseline sigma (config.py default); its column carries the immigrant share
 
 
 def _cev_row(tex_path: str) -> list:
