@@ -1,0 +1,11 @@
+# Educational attainment of the population aged 25-64, EU27_2020, 2024, percent by ISCED 2011
+# level (Eurostat edat_lfs_9915, deg_urb = TOTAL, sex = T). Paper table tab:education.
+# These are the values of the release used in the calibration (config.py: tertiary shares
+# 0.368 natives, 0.329 foreign-born). That release is no longer served by the Eurostat API
+# and its extract was not kept; the cells are transcribed from the paper's table. The current
+# release (data/eurostat/eu_born/edat_lfs_9915_EU27_2024.json, updated 2026-09-10) gives
+# 19.6/44.4/35.9 (total), 16.9/46.5/36.6 (natives), 33.3/34.1/32.5 (foreign-born).
+group,c_birth,ED0-2,ED3_4,ED5-8
+Total,TOTAL,19.6,44.3,36.1
+Natives,NAT,16.9,46.4,36.8
+Foreign,FOR,33.1,33.9,32.9

@@ -16,6 +16,12 @@ Regenerate every numerical output in the paper.
 - σ × θ sensitivity at ρ = 3, φ = 0.72 (appendix tables tab:sigma_theta_grid,
   tab:sigma_summary): analysis.run_sigma_theta_grid, one scratch copy per σ,
   collected under output/variants/sigma_theta_grid/.
+- Paper tables and figures: analysis.build_paper_tables writes the tabular block of every
+  table of the draft (one file per table or panel) and analysis.build_paper_figures copies
+  every figure under the draft's file names, both from the outputs above (and from the
+  dynamic exercise's runs when present); destination text/tables and text/figs when the
+  package sits in the paper repository, else output/paper_tables and output/paper_figures
+  ($MIG_PAPER_TABLES, $MIG_PAPER_FIGS override).
 
 Parameter variants are set through the MIG_SIGMA / MIG_THETA / MIG_EPS / MIG_GAMMA /
 MIG_RHO / MIG_PHI environment variables read by config.py; defaults are the baseline calibration.
@@ -82,6 +88,10 @@ def main():
 
     print("== sigma x theta sensitivity (rho=3, phi=0.72) ==")
     _run({}, PKG, module="analysis.run_sigma_theta_grid")
+
+    print("== paper tables and figures (text/tables, text/figs or output/paper_*) ==")
+    _run({}, PKG, module="analysis.build_paper_tables")
+    _run({}, PKG, module="analysis.build_paper_figures")
 
     print("done: output/, output/variants/{sig2,eps20,gamma005,eu_born,sigma_theta_grid}/")
 
